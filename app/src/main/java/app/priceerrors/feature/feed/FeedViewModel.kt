@@ -1,0 +1,107 @@
+package app.priceerrors.feature.feed
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import app.priceerrors.core.data.DealRepository
+import app.priceerrors.core.model.Deal
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+data class FeedUiState(
+    val isLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
+    val deals: List<Deal> = emptyList(),
+    val selectedDealId: String? = null,
+    val errorMessage: String? = null,
+) {
+    val selectedDeal: Deal?
+        get() = selectedDealId?.let { id -> deals.firstOrNull { deal -> deal.id == id } }
+}
+
+class FeedViewModel(
+    private val repository: DealRepository,
+) : ViewModel() {
+    private val _uiState = MutableStateFlow(FeedUiState())
+    val uiState: StateFlow<FeedUiState> = _uiState.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            repository
+                .observeFeed()
+                .catch { error ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = error.message ?: "Unable to load deals.",
+                        )
+                    }
+                }
+                .collect { deals ->
+                    _uiState.update { current ->
+                        current.copy(
+                            isLoading = false,
+                            deals = deals,
+                            selectedDealId = current.selectedDealId?.takeIf { selectedId ->
+                                deals.any { deal -> deal.id == selectedId }
+                            },
+                        )
+                    }
+                }
+        }
+    }
+
+    fun selectDeal(id: String) {
+        _uiState.update { current ->
+            if (current.deals.any { deal -> deal.id == id }) {
+                current.copy(selectedDealId = id)
+            } else {
+                current
+            }
+        }
+    }
+
+    fun clearSelection() {
+        _uiState.update { current -> current.copy(selectedDealId = null) }
+    }
+
+    fun refresh() {
+        if (_uiState.value.isRefreshing) return
+
+        viewModelScope.launch {
+            _uiState.update { current ->
+                current.copy(isRefreshing = true, errorMessage = null)
+            }
+
+            repository.refresh().fold(
+                onSuccess = {
+                    _uiState.update { current -> current.copy(isRefreshing = false) }
+                },
+                onFailure = { error ->
+                    _uiState.update { current ->
+                        current.copy(
+                            isRefreshing = false,
+                            errorMessage = error.message ?: "Unable to refresh deals.",
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    class Factory(
+        private val repository: DealRepository,
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            if (modelClass.isAssignableFrom(FeedViewModel::class.java)) {
+                return FeedViewModel(repository) as T
+            }
+            throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
+        }
+    }
+}

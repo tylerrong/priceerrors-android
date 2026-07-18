@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PriceErrors</string>
+    <string name="website_url" translatable="false">https://priceerrors.app</string>
+    <string name="privacy_policy_url" translatable="false">https://priceerrors.app/privacy</string>
+    <string name="terms_of_service_url" translatable="false">https://priceerrors.app/terms</string>
+    <string name="support_url" translatable="false">https://priceerrors.app/support</string>
+    <string name="account_deletion_url" translatable="false">https://priceerrors.app/delete-account</string>
+    <string name="notification_channel_deals">Deal alerts</string>
+    <string name="notification_channel_deals_description">Time-sensitive PriceErrors deals and price-drop alerts.</string>
+</resources>

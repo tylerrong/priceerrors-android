@@ -1,0 +1,33 @@
+PriceErrors Android - Third-Party Notices
+
+Space Grotesk
+Copyright 2018 The Space Grotesk Project Authors
+Licensed under the SIL Open Font License, Version 1.1.
+The complete license is packaged as res/raw/space_grotesk_ofl_1_1.txt.
+Project: https://github.com/floriankarsten/space-grotesk
+
+AndroidX, Jetpack Compose, Material Components and Material Icons
+Copyright The Android Open Source Project
+Licensed under the Apache License, Version 2.0.
+The complete license is packaged as res/raw/apache_license_2_0.txt.
+Project: https://source.android.com and https://developer.android.com/jetpack
+
+Kotlin and kotlinx.coroutines
+Copyright JetBrains s.r.o. and Kotlin project contributors
+Licensed under the Apache License, Version 2.0.
+The complete license is packaged as res/raw/apache_license_2_0.txt.
+Projects: https://kotlinlang.org and https://github.com/Kotlin/kotlinx.coroutines
+
+AndroidX Credential Manager and Firebase Android SDK
+Copyright The Android Open Source Project, Google LLC, and contributors
+Licensed under the Apache License, Version 2.0.
+The complete license is packaged as res/raw/apache_license_2_0.txt.
+
+Google ID and Google Play Billing client libraries
+Copyright Google LLC
+Distributed under the license notices shipped in their Maven artifacts and the
+applicable Google APIs and Android SDK terms.
+
+The notices above cover the libraries and assets directly shipped in the app.
+Transitive dependency notices remain available in their upstream artifacts and
+source repositories. Test-only dependencies are not distributed in the app.

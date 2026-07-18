@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@raw/apache_license_2_0,@raw/space_grotesk_ofl_1_1,@raw/third_party_notices" />

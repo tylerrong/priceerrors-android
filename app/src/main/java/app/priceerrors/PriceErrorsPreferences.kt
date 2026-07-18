@@ -1,0 +1,77 @@
+package app.priceerrors
+
+import android.content.Context
+import androidx.core.content.edit
+import app.priceerrors.ui.theme.AppearanceOption
+import app.priceerrors.ui.theme.FeedLayoutOption
+import app.priceerrors.ui.theme.PaletteOption
+
+class PriceErrorsPreferences(context: Context) {
+    private val preferences = context.getSharedPreferences("priceerrors_ui", Context.MODE_PRIVATE)
+
+    var hasCompletedOnboarding: Boolean
+        get() = preferences.getBoolean("has_completed_onboarding", false)
+        set(value) = preferences.edit { putBoolean("has_completed_onboarding", value) }
+
+    var isSignedIn: Boolean
+        get() = preferences.getBoolean("is_signed_in", false)
+        set(value) = preferences.edit { putBoolean("is_signed_in", value) }
+
+    var isPro: Boolean
+        get() = preferences.getBoolean("is_pro", false)
+        set(value) = preferences.edit { putBoolean("is_pro", value) }
+
+    var pushAlertsEnabled: Boolean
+        get() = preferences.getBoolean("push_alerts_enabled", false)
+        set(value) = preferences.edit { putBoolean("push_alerts_enabled", value) }
+
+    var displayName: String
+        get() = preferences.getString("display_name", "Tyler Rong") ?: "Tyler Rong"
+        set(value) = preferences.edit { putString("display_name", value) }
+
+    var email: String
+        get() = preferences.getString("email", "tylerrong613@gmail.com") ?: "tylerrong613@gmail.com"
+        set(value) = preferences.edit { putString("email", value) }
+
+    var palette: PaletteOption
+        get() = PaletteOption.fromKey(preferences.getString("palette", null))
+        set(value) = preferences.edit { putString("palette", value.key) }
+
+    var appearance: AppearanceOption
+        get() = AppearanceOption.fromKey(preferences.getString("appearance", null))
+        set(value) = preferences.edit { putString("appearance", value.key) }
+
+    var feedLayout: FeedLayoutOption
+        get() = FeedLayoutOption.fromKey(preferences.getString("feed_layout", null))
+        set(value) = preferences.edit { putString("feed_layout", value.key) }
+
+    var preferredCategories: Set<String>
+        get() = preferences.getStringSet("preferred_categories", emptySet())?.toSet().orEmpty()
+        set(value) = preferences.edit { putStringSet("preferred_categories", value) }
+
+    var savedDealIds: Set<String>
+        get() = preferences.getStringSet("saved_deal_ids", emptySet())?.toSet().orEmpty()
+        set(value) = preferences.edit { putStringSet("saved_deal_ids", value) }
+
+    var claimedDealIds: Set<String>
+        get() = preferences.getStringSet("claimed_deal_ids", emptySet())?.toSet().orEmpty()
+        set(value) = preferences.edit { putStringSet("claimed_deal_ids", value) }
+
+    var voteEntries: Set<String>
+        get() = preferences.getStringSet("vote_entries", emptySet())?.toSet().orEmpty()
+        set(value) = preferences.edit { putStringSet("vote_entries", value) }
+
+    fun resetAccount() {
+        preferences.edit {
+            putBoolean("has_completed_onboarding", false)
+            putBoolean("is_signed_in", false)
+            putBoolean("is_pro", false)
+            remove("display_name")
+            remove("email")
+            remove("preferred_categories")
+            remove("saved_deal_ids")
+            remove("claimed_deal_ids")
+            remove("vote_entries")
+        }
+    }
+}
