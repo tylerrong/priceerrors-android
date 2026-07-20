@@ -38,6 +38,12 @@ same-named CI environment variables:
 ```text
 PRICEERRORS_GOOGLE_WEB_CLIENT_ID=...apps.googleusercontent.com
 
+# Backend. Without all four the app falls back to the built-in sample feed.
+PRICEERRORS_SERVER_BASE_URL=https://api.example.com
+PRICEERRORS_SERVER_API_KEY=...
+PRICEERRORS_SUPABASE_URL=https://YOUR_PROJECT_ID.supabase.co
+PRICEERRORS_SUPABASE_ANON_KEY=...
+
 # Defaults shown; override only if Play Console uses different product IDs.
 PRICEERRORS_BILLING_WEEKLY_PRODUCT_ID=priceerrors_pro_weekly
 PRICEERRORS_BILLING_MONTHLY_PRODUCT_ID=priceerrors_pro_monthly
@@ -51,11 +57,22 @@ PRICEERRORS_FIREBASE_SENDER_ID=...
 
 Debug builds retain an explicitly labeled local email-auth and paywall bypass so
 the UI can be developed without external consoles. Those bypasses are compiled
-out of release behavior. Google returns a real ID token, but exchanging it for a
-Supabase session remains backend work. FCM tokens are retained as pending and
-never logged until device registration is connected. Play purchases are queried,
-launched, restored, and acknowledged on-device; server-side purchase-token
-verification must become authoritative before production.
+out of release behavior.
+
+The Google ID token is exchanged for a Supabase session, which authorizes every
+server call. The deal feed, votes, claims, and account deletion are served by the
+PriceErrors API. Two integrations remain device-local:
+
+- **Play purchases** are queried, launched, restored, and acknowledged on-device,
+  but nothing tells the server. The server derives Pro from a RevenueCat webhook,
+  so an Android subscriber's `profiles.is_pro` is never set — and because
+  `GET /deals` hard-paywalls non-Pro callers to an empty list, a paying Android
+  user currently sees no deals. Server-side purchase verification has to land
+  before Android billing is usable.
+- **FCM tokens** are retained as pending and never logged. `POST /devices/register`
+  is deliberately not called: `device_tokens` has no platform column and
+  `getAllDeviceTokens()` feeds every row to APNs, so registering FCM tokens there
+  would inject unroutable tokens into the iOS push path.
 
 Notification permission is requested only after the user enables Push alerts.
 Incoming FCM payloads may provide `dealId` or `deal_id`; the app routes verified
@@ -209,7 +226,10 @@ SDK behavior.
 
 ## Architecture seam
 
-`AppContainer` owns the repository dependency. The current fake implementation
-keeps UI work deterministic; replacing it with a network repository should not
-require screen rewrites. Secrets and production service credentials must stay in
-local files or CI secret storage and must never be committed.
+`AppContainer` owns the repository dependency. It selects `NetworkDealRepository`
+when the four backend values above are present and falls back to
+`FakeDealRepository` when they are not, so UI work stays possible without
+credentials. `PriceErrorsApi` depends on an `AccessTokenProvider` rather than the
+whole sign-in stack, which is what lets the API and refresh-retry behavior be
+tested against a mock server. Secrets and production service credentials must
+stay in local files or CI secret storage and must never be committed.

@@ -20,6 +20,8 @@ class MainActivity : ComponentActivity() {
             PriceErrorsApp(
                 repository = appContainer.dealRepository,
                 googleAuthClient = appContainer.googleAuthClient,
+                supabaseAuthClient = appContainer.supabaseAuthClient,
+                priceErrorsApi = appContainer.priceErrorsApi,
                 billingManager = appContainer.billingManager,
                 navigationIntentStore = appContainer.navigationIntentStore,
                 notificationCoordinator = appContainer.notificationCoordinator,

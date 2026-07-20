@@ -43,6 +43,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import app.priceerrors.core.network.ApiError
+import app.priceerrors.core.network.PriceErrorsApi
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -76,13 +78,22 @@ fun CommunityScreen(
     onUpgrade: () -> Unit,
     modifier: Modifier = Modifier,
     onNestedDestinationChanged: (Boolean) -> Unit = {},
+    /**
+     * Null in builds with no backend configured, where the sample posts are
+     * shown and new posts stay on this device.
+     */
+    api: PriceErrorsApi? = null,
 ) {
     val context = LocalContext.current
     val moderationStore = remember(context.applicationContext) {
         CommunityModerationStore(context.applicationContext)
     }
+    val repository = remember(api) { api?.let(::CommunityRepository) }
     val deals = remember {
-        mutableStateListOf<CommunityDeal>().apply { addAll(sampleCommunityDeals()) }
+        mutableStateListOf<CommunityDeal>().apply {
+            // Seeded with samples only when there is no server to load from.
+            if (api == null) addAll(sampleCommunityDeals())
+        }
     }
     var destination: CommunityDestination by remember { mutableStateOf(CommunityDestination.Feed) }
     var moderationRevision by remember { mutableIntStateOf(0) }
@@ -101,6 +112,19 @@ fun CommunityScreen(
 
     LaunchedEffect(destination) {
         onNestedDestinationChanged(destination != CommunityDestination.Feed)
+    }
+
+    LaunchedEffect(repository) {
+        val loaded = repository?.loadFeed() ?: return@LaunchedEffect
+        loaded.fold(
+            onSuccess = { posts ->
+                deals.clear()
+                deals.addAll(posts)
+            },
+            onFailure = {
+                snackbarHostState.showSnackbar("Couldn't load community posts.")
+            },
+        )
     }
 
     BackHandler(enabled = destination != CommunityDestination.Feed) {
@@ -134,10 +158,35 @@ fun CommunityScreen(
                 },
                 onClose = { destination = CommunityDestination.Feed },
                 onPosted = { deal ->
-                    deals.add(0, deal)
                     destination = CommunityDestination.Feed
-                    scope.launch {
-                        snackbarHostState.showSnackbar("Deal posted locally. Server sync is not connected yet.")
+                    val currentRepository = repository
+                    if (currentRepository == null) {
+                        deals.add(0, deal)
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                "Deal posted locally. No server is configured in this build.",
+                            )
+                        }
+                    } else {
+                        scope.launch {
+                            currentRepository.post(deal).fold(
+                                // Insert the server's row, not the draft — it
+                                // carries the canonical id used for delete and
+                                // reporting.
+                                onSuccess = { saved -> deals.add(0, saved) },
+                                onFailure = { error ->
+                                    snackbarHostState.showSnackbar(
+                                        when (error) {
+                                            is ApiError.ProRequired ->
+                                                "Posting to Community requires PriceErrors Pro."
+                                            is ApiError.RateLimited ->
+                                                "You're posting too quickly. Try again shortly."
+                                            else -> "Couldn't post your deal. Try again."
+                                        },
+                                    )
+                                },
+                            )
+                        }
                     }
                 },
                 modifier = modifier,

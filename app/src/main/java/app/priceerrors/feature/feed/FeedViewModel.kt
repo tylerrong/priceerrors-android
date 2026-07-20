@@ -53,6 +53,29 @@ class FeedViewModel(
                     }
                 }
         }
+
+        loadInitialFeed()
+    }
+
+    /**
+     * Pulls the first page on creation. A network-backed repository starts
+     * empty, so without this the feed would sit blank until the user pulled to
+     * refresh.
+     */
+    private fun loadInitialFeed() {
+        viewModelScope.launch {
+            repository.refresh().onFailure { error ->
+                _uiState.update { current ->
+                    current.copy(
+                        isLoading = false,
+                        errorMessage = error.message ?: "Unable to load deals.",
+                    )
+                }
+            }
+            // Success is handled by the observeFeed collector above, which
+            // clears isLoading when the new deals arrive.
+            _uiState.update { current -> current.copy(isLoading = false) }
+        }
     }
 
     fun selectDeal(id: String) {

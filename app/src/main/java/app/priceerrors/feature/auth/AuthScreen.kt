@@ -58,7 +58,12 @@ fun AuthScreen(
     onAuthenticated: (name: String, email: String) -> Unit,
     modifier: Modifier = Modifier,
     allowLocalEmailAuth: Boolean = true,
-    allowUnverifiedGoogleSession: Boolean = true,
+    /**
+     * Whether a successful [onGoogleAuthenticate] may complete sign-in. False
+     * when no account backend is configured, in which case a Google credential
+     * alone cannot establish a real session.
+     */
+    canCompleteGoogleSignIn: Boolean = true,
     onGoogleAuthenticate: suspend () -> Result<AuthIdentity> = {
         Result.failure(AuthConfigurationException("Google sign-in is not configured."))
     },
@@ -187,7 +192,7 @@ fun AuthScreen(
                     onGoogleAuthenticate()
                         .onSuccess { identity ->
                             isLoading = false
-                            if (allowUnverifiedGoogleSession) {
+                            if (canCompleteGoogleSignIn) {
                                 onAuthenticated(identity.displayName, identity.email)
                             } else {
                                 errorMessage = "Google identity received. Finishing sign-in requires the account service connection."

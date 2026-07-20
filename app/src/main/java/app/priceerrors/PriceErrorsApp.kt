@@ -34,7 +34,11 @@ import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.priceerrors.core.data.DealRepository
+import app.priceerrors.core.data.NetworkDealRepository
 import app.priceerrors.core.auth.GoogleCredentialAuthClient
+import app.priceerrors.core.auth.SupabaseAuthClient
+import app.priceerrors.core.network.ApiConfig
+import app.priceerrors.core.network.PriceErrorsApi
 import app.priceerrors.core.billing.BillingManager
 import app.priceerrors.core.billing.BillingPlan
 import app.priceerrors.core.navigation.NavigationIntentStore
@@ -81,6 +85,8 @@ private enum class AppStage {
 fun PriceErrorsApp(
     repository: DealRepository,
     googleAuthClient: GoogleCredentialAuthClient,
+    supabaseAuthClient: SupabaseAuthClient,
+    priceErrorsApi: PriceErrorsApi?,
     billingManager: BillingManager,
     navigationIntentStore: NavigationIntentStore,
     notificationCoordinator: NotificationCoordinator,
@@ -90,6 +96,9 @@ fun PriceErrorsApp(
     val activity = context as? Activity
     val preferences = remember(context) { PriceErrorsPreferences(context.applicationContext) }
     val scope = rememberCoroutineScope()
+    // Null in builds with no backend configured, where the sample feed is used
+    // and every mutation stays on-device.
+    val networkRepository = repository as? NetworkDealRepository
     val systemDark = isSystemInDarkTheme()
     val uiState by feedViewModel.uiState.collectAsStateWithLifecycle()
     val billingState by billingManager.state.collectAsStateWithLifecycle()
@@ -336,10 +345,26 @@ fun PriceErrorsApp(
                         }
                     },
                     allowLocalEmailAuth = BuildConfig.DEBUG,
-                    allowUnverifiedGoogleSession = BuildConfig.DEBUG,
+                    // With a backend configured the Google token is exchanged
+                    // for a real Supabase session below, so sign-in can
+                    // complete. Without one there is nothing to verify against.
+                    canCompleteGoogleSignIn = ApiConfig.isConfigured || BuildConfig.DEBUG,
                     onGoogleAuthenticate = {
-                        activity?.let { googleAuthClient.signIn(it) }
-                            ?: Result.failure(IllegalStateException("Google sign-in is unavailable."))
+                        val currentActivity = activity
+                        if (currentActivity == null) {
+                            Result.failure(IllegalStateException("Google sign-in is unavailable."))
+                        } else {
+                            googleAuthClient.signIn(currentActivity).mapCatching { identity ->
+                                // The Google ID token only becomes an authorised
+                                // session once Supabase accepts it; every server
+                                // route authenticates on that JWT alone.
+                                if (ApiConfig.isConfigured) {
+                                    supabaseAuthClient.signInWithGoogle(identity.idToken)
+                                        .getOrThrow()
+                                }
+                                identity
+                            }
+                        }
                     },
                 )
 
@@ -374,14 +399,33 @@ fun PriceErrorsApp(
                                 preferences.savedDealIds = savedDealIds
                             },
                             onVote = { vote ->
+                                val previousVotes = votesByDealId
                                 votesByDealId = votesByDealId + (selectedDeal.id to vote)
                                 preferences.voteEntries = votesByDealId.map { (id, value) ->
                                     "$id|${value.wireValue}"
                                 }.toSet()
+
+                                networkRepository?.let { network ->
+                                    scope.launch {
+                                        network.vote(selectedDeal.id, vote).onFailure {
+                                            // Roll back so the UI never shows a
+                                            // vote the server did not record.
+                                            votesByDealId = previousVotes
+                                            preferences.voteEntries = previousVotes
+                                                .map { (id, value) -> "$id|${value.wireValue}" }
+                                                .toSet()
+                                        }
+                                    }
+                                }
                             },
                             onClaim = {
                                 claimedDealIds = claimedDealIds + selectedDeal.id
                                 preferences.claimedDealIds = claimedDealIds
+                                // Records the open server-side; this is what
+                                // decrements the free-tier daily allowance.
+                                networkRepository?.let { network ->
+                                    scope.launch { network.claim(selectedDeal.id) }
+                                }
                             },
                         )
                     } else {
@@ -398,6 +442,7 @@ fun PriceErrorsApp(
                                 currentUserName = displayName,
                                 onUpgrade = { showUpgradePaywall = true },
                                 onNestedDestinationChanged = { communityHasNestedScreen = it },
+                                api = priceErrorsApi,
                             )
 
                             MainTab.BROWSE -> BrowseScreen(
@@ -452,11 +497,24 @@ fun PriceErrorsApp(
                                     preferences.isSignedIn = false
                                     selectedTabName = MainTab.FEED.name
                                     stageName = AppStage.AUTH.name
+                                    // Drop the server session and any deals it
+                                    // fetched before the next account signs in.
+                                    supabaseAuthClient.clearSession()
+                                    networkRepository?.clear()
                                     activity?.let { currentActivity ->
                                         scope.launch { googleAuthClient.clear(currentActivity) }
                                     }
                                 },
                                 onDeleteAccount = {
+                                    // The server identifies the account from the
+                                    // session, so the session must outlive the
+                                    // delete call — clear it only once the call
+                                    // has returned.
+                                    scope.launch {
+                                        priceErrorsApi?.deleteAccount()
+                                        supabaseAuthClient.clearSession()
+                                        networkRepository?.clear()
+                                    }
                                     preferences.resetAccount()
                                     displayName = preferences.displayName
                                     email = preferences.email

@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 fun releaseSetting(name: String): String? =
@@ -49,6 +50,26 @@ android {
             "String",
             "GOOGLE_WEB_CLIENT_ID",
             buildConfigString(buildSetting("PRICEERRORS_GOOGLE_WEB_CLIENT_ID")),
+        )
+        buildConfigField(
+            "String",
+            "SERVER_BASE_URL",
+            buildConfigString(buildSetting("PRICEERRORS_SERVER_BASE_URL")),
+        )
+        buildConfigField(
+            "String",
+            "SERVER_API_KEY",
+            buildConfigString(buildSetting("PRICEERRORS_SERVER_API_KEY")),
+        )
+        buildConfigField(
+            "String",
+            "SUPABASE_URL",
+            buildConfigString(buildSetting("PRICEERRORS_SUPABASE_URL")),
+        )
+        buildConfigField(
+            "String",
+            "SUPABASE_ANON_KEY",
+            buildConfigString(buildSetting("PRICEERRORS_SUPABASE_ANON_KEY")),
         )
         buildConfigField(
             "String",
@@ -148,12 +169,15 @@ dependencies {
     implementation(libs.play.billing)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)
+    implementation(libs.okhttp)
+    implementation(libs.kotlinx.serialization.json)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.okhttp.mockwebserver)
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

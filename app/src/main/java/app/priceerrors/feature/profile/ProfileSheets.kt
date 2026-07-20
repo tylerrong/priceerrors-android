@@ -318,11 +318,12 @@ private fun HelpSupportSheet(
     if (showDeleteAlert) {
         AlertDialog(
             onDismissRequest = { showDeleteAlert = false },
-            title = { Text("Delete local profile?") },
+            title = { Text("Delete your account?") },
             text = {
                 Text(
-                    "This removes data saved by this Android build from this device. " +
-                        "Server-side deletion will be performed after the account backend is connected.",
+                    "This deletes your PriceErrors account and its server-side data, " +
+                        "and removes everything this app saved on this device. " +
+                        "This can't be undone.",
                 )
             },
             confirmButton = {
@@ -477,14 +478,14 @@ private val faqItems = listOf(
 
 private val privacySections = listOf(
     PolicySectionData("Overview", "PriceErrors is built with your privacy in mind. We collect only what is necessary to make the app work, we do not sell your data, and we do not run ads."),
-    PolicySectionData("Current Android Build", "Until the account backend is connected, your local profile, saved deals, preferences, claims, votes, blocks, and pending reports remain on this device. Debug demo accounts are not real PriceErrors accounts."),
-    PolicySectionData("Google Sign-In", "Credential Manager may obtain a Google ID token only after you choose a Google account. A production account is not created until that token can be exchanged with the PriceErrors account service."),
+    PolicySectionData("Current Android Build", "Your account, the deals you open, and your working/not-working votes are synchronized with the PriceErrors account service. Appearance preferences, saved deals, blocks, and pending community reports remain on this device. Debug demo accounts are not real PriceErrors accounts."),
+    PolicySectionData("Google Sign-In", "Credential Manager obtains a Google ID token only after you choose a Google account. That token is exchanged with the PriceErrors account service, which creates your account and issues the session used for all server requests."),
     PolicySectionData("Community", "Community sample posts and posts created in the current Android build are device-local. Reports are queued locally and clearly marked as not yet delivered to PriceErrors staff. Do not include private personal information."),
     PolicySectionData("What We Don't Collect", "We do not collect your location. We do not track browsing or purchases outside the app. We do not use advertising SDKs that profile you, and we do not sell your data."),
-    PolicySectionData("How Your Data Is Stored", "Local Android data is stored in private application storage with backup disabled. The published online policy will describe Supabase storage when account synchronization is connected."),
+    PolicySectionData("How Your Data Is Stored", "Local Android data is stored in private application storage with backup disabled, including your session token. Account and deal-activity data is stored in Supabase. See the published online policy for full details."),
     PolicySectionData("Push Notifications", "If you enable alerts and Firebase is configured, an FCM token is generated and retained locally pending backend registration. You can disable alerts at any time."),
     PolicySectionData("Purchases", "Google Play processes subscription purchases. The app reads purchase state and acknowledges completed purchases; server-side verification must be connected before production."),
-    PolicySectionData("Data Deletion", "Delete Local Profile removes this Android device's local profile and deal state. Use the online account-deletion page for the production account-deletion process."),
+    PolicySectionData("Data Deletion", "Delete Account removes your PriceErrors account and its server-side data, and clears this device's local profile and deal state. The online account-deletion page offers the same process from the web."),
     PolicySectionData("Children's Privacy", "PriceErrors is not directed at children under 13 and does not knowingly collect their personal information."),
     PolicySectionData("Changes to This Policy", "We may update this policy from time to time. Continued use after changes constitutes acceptance of the updated policy."),
 )
