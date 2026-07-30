@@ -1,7 +1,9 @@
 package app.priceerrors.feature.auth
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -30,5 +32,20 @@ class AuthScreenTest {
         compose.onNodeWithTag(PriceErrorsTestTags.AUTH_SUBMIT).performClick()
 
         compose.onNodeWithText("Enter a valid email address.").assertIsDisplayed()
+    }
+
+    @Test
+    fun googleAuthenticationUsesTheGoogleLogoInsteadOfATextGlyph() {
+        compose.setContent {
+            PriceErrorsTheme {
+                AuthScreen(onAuthenticated = { _, _ -> })
+            }
+        }
+
+        compose.onNodeWithTag(
+            PriceErrorsTestTags.GOOGLE_AUTH_LOGO,
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
+        compose.onAllNodesWithText("G", useUnmergedTree = true).assertCountEquals(0)
     }
 }

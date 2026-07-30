@@ -30,6 +30,7 @@ object PriceErrorsTestTags {
     const val AUTH_SCREEN = "auth_screen"
     const val AUTH_SUBMIT = "auth_submit"
     const val GOOGLE_AUTH = "google_auth"
+    const val GOOGLE_AUTH_LOGO = "google_auth_logo"
     const val PAYWALL_SCREEN = "paywall_screen"
     const val PAYWALL_PURCHASE = "paywall_purchase"
 }

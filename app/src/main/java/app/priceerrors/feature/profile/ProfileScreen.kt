@@ -926,8 +926,7 @@ private fun <T> SegmentedOptions(
     ) {
         values.forEach { option ->
             val active = option == selected
-            Surface(
-                onClick = { onSelected(option) },
+            Box(
                 modifier = Modifier
                     .weight(1f)
                     .height(48.dp)
@@ -937,17 +936,26 @@ private fun <T> SegmentedOptions(
                         contentDescription = label(option)
                         stateDescription = if (active) "Selected" else "Not selected"
                     }
-                    .testTag("option_${label(option).lowercase()}"),
-                color = if (active) AppDark else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
-                contentColor = if (active) Color.White else MaterialTheme.colorScheme.onSurface,
-                shape = RoundedCornerShape(9.dp),
+                    .testTag("option_${label(option).lowercase()}")
+                    .clickable(role = Role.RadioButton) { onSelected(option) },
+                contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = label(option),
-                    modifier = Modifier.padding(vertical = 8.dp),
-                    style = MaterialTheme.typography.labelMedium,
-                    textAlign = TextAlign.Center,
-                )
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(36.dp),
+                    color = if (active) AppDark else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                    contentColor = if (active) Color.White else MaterialTheme.colorScheme.onSurface,
+                    shape = RoundedCornerShape(9.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = label(option),
+                            style = MaterialTheme.typography.labelMedium,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
             }
         }
     }

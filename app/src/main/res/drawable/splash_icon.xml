@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android 12+ masks splash icons to a circle. Keep the pig mark inside that
+    safe area rather than passing the edge-to-edge adaptive foreground through
+    directly, which clips the snout and feet on launch.
+-->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_launcher_foreground"
+    android:insetLeft="12%"
+    android:insetTop="12%"
+    android:insetRight="12%"
+    android:insetBottom="12%" />
