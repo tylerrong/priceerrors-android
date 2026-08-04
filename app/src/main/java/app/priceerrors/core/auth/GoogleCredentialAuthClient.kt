@@ -8,6 +8,7 @@ import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.NoCredentialException
 import app.priceerrors.BuildConfig
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 
 data class AuthIdentity(
@@ -35,24 +36,50 @@ class GoogleCredentialAuthClient {
             )
         }
 
-        val googleIdOption = GetGoogleIdOption.Builder()
-            .setFilterByAuthorizedAccounts(false)
-            .setAutoSelectEnabled(false)
-            .setServerClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID)
-            .build()
-        val request = GetCredentialRequest.Builder()
-            .addCredentialOption(googleIdOption)
-            .build()
+        val credentialManager = CredentialManager.create(activity)
+
+        // Two different APIs, and the distinction matters. GetGoogleIdOption is
+        // the One Tap path: it resolves an account without a picker, which is
+        // the nicest experience for someone returning — but it raises
+        // NoCredentialException whenever it cannot do that silently, even with
+        // filtering off. Behind an explicit "Sign in with Google" button that
+        // reads as a dead end.
+        //
+        // GetSignInWithGoogleOption is the button's API: it always opens the
+        // account picker. Try the smooth path, fall back to the explicit one.
         val response = try {
-            CredentialManager.create(activity).getCredential(
+            credentialManager.getCredential(
                 context = activity,
-                request = request,
+                request = GetCredentialRequest.Builder()
+                    .addCredentialOption(
+                        GetGoogleIdOption.Builder()
+                            .setFilterByAuthorizedAccounts(false)
+                            .setAutoSelectEnabled(false)
+                            .setServerClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID)
+                            .build(),
+                    )
+                    .build(),
             )
-        } catch (error: NoCredentialException) {
-            throw IllegalStateException(
-                "No eligible Google account was found on this device.",
-                error,
-            )
+        } catch (oneTapUnavailable: NoCredentialException) {
+            try {
+                credentialManager.getCredential(
+                    context = activity,
+                    request = GetCredentialRequest.Builder()
+                        .addCredentialOption(
+                            GetSignInWithGoogleOption
+                                .Builder(BuildConfig.GOOGLE_WEB_CLIENT_ID)
+                                .build(),
+                        )
+                        .build(),
+                )
+            } catch (noAccount: NoCredentialException) {
+                // Both paths declined: there really is no usable Google account.
+                throw IllegalStateException(
+                    "No Google account is available on this device. Add one in " +
+                        "Settings, or sign up with an email address instead.",
+                    noAccount,
+                )
+            }
         }
         val credential = response.credential
         if (
