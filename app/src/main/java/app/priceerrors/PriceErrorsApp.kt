@@ -42,6 +42,7 @@ import app.priceerrors.core.network.PriceErrorsApi
 import app.priceerrors.core.billing.BillingManager
 import app.priceerrors.core.billing.BillingPlan
 import app.priceerrors.core.navigation.NavigationIntentStore
+import app.priceerrors.core.shortcuts.PriceErrorsShortcuts
 import app.priceerrors.core.notifications.NotificationCoordinator
 import app.priceerrors.core.model.DealVote
 import app.priceerrors.feature.auth.AuthScreen
@@ -103,6 +104,7 @@ fun PriceErrorsApp(
     val uiState by feedViewModel.uiState.collectAsStateWithLifecycle()
     val billingState by billingManager.state.collectAsStateWithLifecycle()
     val pendingDealId by navigationIntentStore.pendingDealId.collectAsStateWithLifecycle()
+    val pendingTrialOffer by navigationIntentStore.pendingTrialOffer.collectAsStateWithLifecycle()
 
     val initialStage = remember {
         when {
@@ -284,6 +286,22 @@ fun PriceErrorsApp(
             showUpgradePaywall = false
             if (stageName == AppStage.PAYWALL.name) stageName = AppStage.MAIN.name
         }
+    }
+
+    // Keep the launcher long-press menu in step with the entitlement: the trial
+    // offer appears for everyone who hasn't subscribed and drops off the moment
+    // they do.
+    LaunchedEffect(isPro) {
+        PriceErrorsShortcuts.refresh(context, isPro)
+    }
+
+    LaunchedEffect(pendingTrialOffer, stageName, isPro) {
+        if (!pendingTrialOffer) return@LaunchedEffect
+        // Onboarding and the hard paywall already lead somewhere better, so the
+        // shortcut only interrupts once the user is in the app proper.
+        if (stageName != AppStage.MAIN.name) return@LaunchedEffect
+        if (!isPro) showUpgradePaywall = true
+        navigationIntentStore.consumeTrialOffer()
     }
 
     LaunchedEffect(pendingDealId, stageName, uiState.isLoading, uiState.deals) {

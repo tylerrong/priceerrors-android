@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import app.priceerrors.core.navigation.PriceErrorsDeepLink
+import app.priceerrors.core.shortcuts.PriceErrorsShortcuts
 
 class MainActivity : ComponentActivity() {
     private val appContainer: AppContainer by lazy {
@@ -36,6 +37,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun routeIntent(intent: Intent?) {
+        if (PriceErrorsShortcuts.shortcutId(this, intent) == PriceErrorsShortcuts.TRIAL_ID) {
+            appContainer.navigationIntentStore.openTrialOffer()
+            return
+        }
         val dealId = intent?.getStringExtra(EXTRA_DEAL_ID)
             ?: PriceErrorsDeepLink.dealId(intent?.dataString)
         appContainer.navigationIntentStore.openDeal(dealId)

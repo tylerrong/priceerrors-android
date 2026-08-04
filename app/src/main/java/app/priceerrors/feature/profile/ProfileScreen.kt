@@ -77,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.priceerrors.core.model.Deal
 import app.priceerrors.ui.components.DealArtwork
+import app.priceerrors.ui.components.PigMark
 import app.priceerrors.ui.components.dealAccessibilityLabel
 import app.priceerrors.ui.components.dealVisuals
 import app.priceerrors.ui.components.formatPrice
@@ -1003,13 +1004,7 @@ private fun ProfileFloatingTabBar(
                         .background(Color.White, RoundedCornerShape(7.dp)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = "$",
-                        color = accent,
-                        fontFamily = SpaceGrotesk,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                    )
+                    PigMark(tint = accent, size = 16.dp)
                 }
                 Text(
                     text = "Feed",

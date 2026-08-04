@@ -4,6 +4,7 @@ import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -40,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.zIndex
@@ -63,6 +65,7 @@ import app.priceerrors.ui.accessibility.PriceErrorsTestTags
 import app.priceerrors.ui.accessibility.rememberAnimationsEnabled
 import app.priceerrors.ui.theme.AppDark
 import app.priceerrors.ui.theme.Mint
+import app.priceerrors.ui.theme.isAppInDarkTheme
 import app.priceerrors.ui.theme.NotWorkingRed
 import app.priceerrors.ui.theme.SpaceGrotesk
 import kotlinx.coroutines.delay
@@ -94,14 +97,7 @@ fun PriceErrorsLogo(
                 .background(accent, RoundedCornerShape(7.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = "$",
-                color = Color.White,
-                fontFamily = SpaceGrotesk,
-                fontWeight = FontWeight.Bold,
-                fontSize = 17.sp,
-                lineHeight = 17.sp,
-            )
+            PigMark(tint = Color.White, size = 17.5.dp)
         }
 
         Text(
@@ -113,6 +109,25 @@ fun PriceErrorsLogo(
             letterSpacing = (-0.7).sp,
         )
     }
+}
+
+/**
+ * The brand pig, drawn from the shared iOS asset. Rendered as an [Icon] so only
+ * the alpha channel is used and [tint] drives the color — the Android
+ * equivalent of the template rendering mode iOS applies to the same PNG.
+ */
+@Composable
+fun PigMark(
+    tint: Color,
+    size: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
+) {
+    Icon(
+        painter = painterResource(R.drawable.pig),
+        contentDescription = null,
+        modifier = modifier.size(size),
+        tint = tint,
+    )
 }
 
 @Composable
@@ -240,6 +255,34 @@ fun DealPill(
     }
 }
 
+/**
+ * Soft tinted capsule in the category's own color — lighter than the solid
+ * black pill it replaced, and it ties the tag to the category color used on the
+ * thumbnail.
+ */
+@Composable
+fun CategoryTag(
+    category: String,
+    modifier: Modifier = Modifier,
+) {
+    val darkTheme = isAppInDarkTheme
+    val color = dealVisuals(category, darkTheme).accent
+    Text(
+        text = category.uppercase(),
+        modifier = modifier
+            .clip(CircleShape)
+            .background(color.copy(alpha = 0.14f))
+            .border(1.dp, color.copy(alpha = 0.22f), CircleShape)
+            .padding(horizontal = 9.dp, vertical = 4.dp),
+        style = MaterialTheme.typography.labelSmall,
+        fontSize = 10.sp,
+        lineHeight = 13.sp,
+        letterSpacing = 0.8.sp,
+        color = legibleOnCard(color, darkTheme),
+        maxLines = 1,
+    )
+}
+
 fun relativeDealTime(postedAt: Instant, now: Instant = Instant.now()): String {
     val elapsedMinutes = Duration.between(postedAt, now).toMinutes().coerceAtLeast(0)
     val zone = ZoneId.systemDefault()
@@ -300,13 +343,7 @@ fun FloatingTabBar(
                         .background(Color.White, RoundedCornerShape(7.dp)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = "$",
-                        color = MaterialTheme.colorScheme.primary,
-                        fontFamily = SpaceGrotesk,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                    )
+                    PigMark(tint = MaterialTheme.colorScheme.primary, size = 17.5.dp)
                 }
                 Text(
                     text = "Feed",

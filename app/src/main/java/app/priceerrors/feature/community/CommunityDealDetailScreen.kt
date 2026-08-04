@@ -47,7 +47,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.priceerrors.ui.theme.AppDark
+import app.priceerrors.ui.components.CategoryTag
 
 @Composable
 internal fun CommunityDealDetailScreen(
@@ -92,11 +92,7 @@ internal fun CommunityDealDetailScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    DetailPill(
-                        text = deal.category,
-                        background = AppDark,
-                        foreground = MaterialTheme.colorScheme.tertiary,
-                    )
+                    CategoryTag(category = deal.category)
                     DetailPill(
                         text = "COMMUNITY",
                         background = MaterialTheme.colorScheme.primary,

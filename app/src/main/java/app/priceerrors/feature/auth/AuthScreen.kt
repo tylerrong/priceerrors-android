@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,6 +23,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.Image
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -42,6 +48,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -50,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.priceerrors.R
 import app.priceerrors.ui.theme.AppDark
+import app.priceerrors.ui.theme.Mint
 import app.priceerrors.ui.theme.SpaceGrotesk
 import app.priceerrors.ui.accessibility.PriceErrorsTestTags
 import app.priceerrors.core.auth.AuthConfigurationException
@@ -57,6 +65,9 @@ import app.priceerrors.core.auth.AuthIdentity
 import kotlinx.coroutines.launch
 
 private enum class AuthMode { SIGN_UP, SIGN_IN }
+
+/** Both auth buttons share a height so they read as one stack. */
+private val AuthButtonHeight = 56.dp
 
 @Composable
 fun AuthScreen(
@@ -111,11 +122,87 @@ fun AuthScreen(
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.50f),
         )
 
+        // ── Google button — the fastest path, so it leads ────────────
+        Button(
+            onClick = {
+                errorMessage = ""
+                isLoading = true
+                scope.launch {
+                    onGoogleAuthenticate()
+                        .onSuccess { identity ->
+                            isLoading = false
+                            if (canCompleteGoogleSignIn) {
+                                onAuthenticated(identity.displayName, identity.email)
+                            } else {
+                                errorMessage = "Google identity received. Finishing sign-in requires the account service connection."
+                            }
+                        }
+                        .onFailure { error ->
+                            isLoading = false
+                            errorMessage = when (error) {
+                                is AuthConfigurationException -> error.message.orEmpty()
+                                else -> error.message
+                                    ?.takeIf(String::isNotBlank)
+                                    ?: "Google sign-in couldn't be completed. Try again."
+                            }
+                        }
+                }
+            },
+            enabled = !isLoading,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(AuthButtonHeight)
+                .testTag(PriceErrorsTestTags.GOOGLE_AUTH),
+            colors = ButtonDefaults.buttonColors(containerColor = AppDark, contentColor = Color.White),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.ic_google_g),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(18.dp)
+                        .testTag(PriceErrorsTestTags.GOOGLE_AUTH_LOGO),
+                )
+                Text(
+                    if (mode == AuthMode.SIGN_UP) "Sign up with Google" else "Sign in with Google",
+                    fontFamily = SpaceGrotesk,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 16.sp,
+                )
+            }
+        }
+
+        // ── Divider ──────────────────────────────────────────────────
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 22.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            DividerLine(modifier = Modifier.weight(1f))
+            Text(
+                text = "or use email",
+                fontFamily = SpaceGrotesk,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.40f),
+            )
+            DividerLine(modifier = Modifier.weight(1f))
+        }
+
+        // ── Form fields ──────────────────────────────────────────────
         AnimatedVisibility(visible = mode == AuthMode.SIGN_UP) {
             AuthField(
                 value = name,
                 onValueChange = { name = it },
                 placeholder = "Full name",
+                leadingIcon = Icons.Outlined.Person,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 modifier = Modifier.padding(bottom = 12.dp),
             )
@@ -124,12 +211,14 @@ fun AuthScreen(
             value = email,
             onValueChange = { email = it },
             placeholder = "Email",
+            leadingIcon = Icons.Outlined.Email,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
         )
         AuthField(
             value = password,
             onValueChange = { password = it },
             placeholder = "Password",
+            leadingIcon = Icons.Outlined.Lock,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
             isPassword = true,
             modifier = Modifier.padding(top = 12.dp),
@@ -168,9 +257,9 @@ fun AuthScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 16.dp)
-                .height(56.dp)
+                .height(AuthButtonHeight)
                 .testTag(PriceErrorsTestTags.AUTH_SUBMIT),
-            colors = ButtonDefaults.buttonColors(containerColor = AppDark, contentColor = Color.White),
+            colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Color.White),
             shape = RoundedCornerShape(16.dp),
         ) {
             if (isLoading) {
@@ -184,61 +273,6 @@ fun AuthScreen(
                     if (mode == AuthMode.SIGN_UP) "Create Account" else "Sign In",
                     fontFamily = SpaceGrotesk,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                )
-            }
-        }
-
-        Button(
-            onClick = {
-                errorMessage = ""
-                isLoading = true
-                scope.launch {
-                    onGoogleAuthenticate()
-                        .onSuccess { identity ->
-                            isLoading = false
-                            if (canCompleteGoogleSignIn) {
-                                onAuthenticated(identity.displayName, identity.email)
-                            } else {
-                                errorMessage = "Google identity received. Finishing sign-in requires the account service connection."
-                            }
-                        }
-                        .onFailure { error ->
-                            isLoading = false
-                            errorMessage = when (error) {
-                                is AuthConfigurationException -> error.message.orEmpty()
-                                else -> error.message
-                                    ?.takeIf(String::isNotBlank)
-                                    ?: "Google sign-in couldn't be completed. Try again."
-                            }
-                        }
-                }
-            },
-            enabled = !isLoading,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 14.dp)
-                .height(56.dp)
-                .testTag(PriceErrorsTestTags.GOOGLE_AUTH),
-            colors = ButtonDefaults.buttonColors(containerColor = AppDark, contentColor = Color.White),
-            shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.ic_google_g),
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(18.dp)
-                        .testTag(PriceErrorsTestTags.GOOGLE_AUTH_LOGO),
-                )
-                Text(
-                    if (mode == AuthMode.SIGN_UP) "Sign up with Google" else "Sign in with Google",
-                    fontFamily = SpaceGrotesk,
-                    fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp,
                 )
             }
@@ -266,10 +300,20 @@ fun AuthScreen(
 }
 
 @Composable
+private fun DividerLine(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .height(1.dp)
+            .background(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f)),
+    )
+}
+
+@Composable
 private fun AuthField(
     value: String,
     onValueChange: (String) -> Unit,
     placeholder: String,
+    leadingIcon: ImageVector,
     keyboardOptions: KeyboardOptions,
     modifier: Modifier = Modifier,
     isPassword: Boolean = false,
@@ -281,6 +325,14 @@ private fun AuthField(
             .fillMaxWidth()
             .semantics { contentDescription = placeholder },
         placeholder = { Text(placeholder, style = MaterialTheme.typography.bodyLarge) },
+        leadingIcon = {
+            Icon(
+                imageVector = leadingIcon,
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+            )
+        },
         singleLine = true,
         keyboardOptions = keyboardOptions,
         visualTransformation = if (isPassword) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,

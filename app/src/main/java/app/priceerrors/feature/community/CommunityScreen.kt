@@ -2,6 +2,7 @@ package app.priceerrors.feature.community
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -26,7 +27,6 @@ import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -62,7 +62,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.priceerrors.ui.theme.AppDark
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import app.priceerrors.R
+import app.priceerrors.core.network.AppLinks
+import app.priceerrors.ui.components.CategoryTag
 import kotlinx.coroutines.launch
 
 private sealed interface CommunityDestination {
@@ -299,7 +303,7 @@ private fun CommunityFeed(
         item {
             DiscordBanner(
                 onClick = {
-                    runCatching { uriHandler.openUri("https://discord.gg/ugKbqEG6hG") }
+                    runCatching { uriHandler.openUri(AppLinks.DISCORD) }
                 },
                 modifier = Modifier.padding(horizontal = 14.dp),
             )
@@ -393,11 +397,13 @@ private fun DiscordBanner(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Icon(
-                imageVector = Icons.Filled.SportsEsports,
+            // The real Discord mark, matching the iOS banner. The asset already
+            // carries the brand blurple, so it is drawn untinted.
+            Image(
+                painter = painterResource(R.drawable.discord_symbol_blurple),
                 contentDescription = null,
                 modifier = Modifier.size(28.dp),
-                tint = Color(0xFF5865F2),
+                contentScale = ContentScale.Fit,
             )
             Column(
                 modifier = Modifier.weight(1f),
@@ -458,7 +464,7 @@ private fun PostDealBanner(
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text(
-            text = if (isPro) "💎" else "🔒",
+            text = if (isPro) "📣" else "🔒",
             fontSize = 36.sp,
         )
         Column(
@@ -646,7 +652,7 @@ private fun TeamSectionHeader() {
             tint = MaterialTheme.colorScheme.primary,
         )
         Text(
-            text = "Deals by Price Errors Team",
+            text = "Deals by priceerrors Team",
             style = MaterialTheme.typography.labelLarge,
             fontSize = 13.sp,
             letterSpacing = (-0.2).sp,
@@ -747,11 +753,7 @@ private fun CommunityDealRow(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        CommunityPill(
-                            text = deal.category,
-                            background = AppDark,
-                            foreground = MaterialTheme.colorScheme.tertiary,
-                        )
+                        CategoryTag(category = deal.category)
                         if (deal.isAdmin) {
                             Icon(
                                 imageVector = Icons.Filled.Verified,
@@ -820,27 +822,6 @@ private fun CommunityDealRow(
             }
         }
     }
-}
-
-@Composable
-private fun CommunityPill(
-    text: String,
-    background: Color,
-    foreground: Color,
-) {
-    Text(
-        text = text.uppercase(),
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(background)
-            .padding(horizontal = 8.dp, vertical = 3.dp),
-        style = MaterialTheme.typography.labelSmall,
-        fontSize = 10.sp,
-        lineHeight = 13.sp,
-        letterSpacing = 0.3.sp,
-        color = foreground,
-        maxLines = 1,
-    )
 }
 
 @Composable

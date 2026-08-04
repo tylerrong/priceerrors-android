@@ -473,7 +473,7 @@ private val faqItems = listOf(
     "How do push notifications work?" to "When a new deal is found, PriceErrors sends an alert. Keep notifications enabled in your device settings so you do not miss it.",
     "Why did a deal disappear?" to "Deals are removed once the price is fixed or after 24 hours. If a deal is gone, the window has closed.",
     "What do the fire emojis mean?" to "🔥 is a solid deal, 🔥🔥 is getting attention, and 🔥🔥🔥 is blowing up.",
-    "Is this app free?" to "PriceErrors Pro unlocks every deal, community access, and real-time alerts.",
+    "Is this app free?" to "PriceErrors is a subscription app — a membership unlocks the full feed of price errors, the community, and real-time alerts. New members start with a free trial, and you can cancel any time from Google Play → Menu → Subscriptions.",
 )
 
 private val privacySections = listOf(

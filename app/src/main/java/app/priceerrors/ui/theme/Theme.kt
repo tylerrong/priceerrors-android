@@ -5,6 +5,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.luminance
+
+/**
+ * Whether the *resolved* theme is dark. Unlike [isSystemInDarkTheme] this
+ * honors the in-app appearance override, so it is the correct signal for
+ * components that pick colors themselves. The two backgrounds sit at opposite
+ * ends of the luminance range, so the split is unambiguous.
+ */
+val isAppInDarkTheme: Boolean
+    @Composable get() = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
 @Composable
 fun PriceErrorsTheme(
