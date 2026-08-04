@@ -78,8 +78,8 @@ class NotificationCoordinator(private val context: Context) {
             return
         }
         createChannels()
-        val destination = dealId?.let { "https://priceerrors.app/deals/$it" }
-            ?: "https://priceerrors.app"
+        val website = context.getString(R.string.website_url)
+        val destination = dealId?.let { "$website/deals/$it" } ?: website
         val intent = Intent(Intent.ACTION_VIEW, destination.toUri(), context, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val pendingIntent = PendingIntent.getActivity(

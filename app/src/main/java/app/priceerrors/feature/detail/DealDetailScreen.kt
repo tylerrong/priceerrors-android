@@ -66,6 +66,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -85,6 +86,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.priceerrors.R
 import app.priceerrors.core.model.Deal
 import app.priceerrors.core.model.DealVote
 import app.priceerrors.ui.components.DealArtwork
@@ -125,6 +127,7 @@ fun DealDetailScreen(
     onClaim: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val websiteUrl = stringResource(R.string.website_url)
     val uriHandler = LocalUriHandler.current
     val haptics = LocalHapticFeedback.current
     val density = LocalDensity.current
@@ -194,7 +197,8 @@ fun DealDetailScreen(
                         putExtra(
                             Intent.EXTRA_TEXT,
                             "🔥 ${deal.title} for ${formatPrice(deal.priceInCents, deal.currencyCode)}" +
-                                " — spotted on PriceErrors!\n${deal.dealUrl ?: "https://priceerrors.app"}",
+                                " — spotted on PriceErrors!\n" +
+                                (deal.dealUrl ?: websiteUrl),
                         )
                     }
                     context.startActivity(Intent.createChooser(shareIntent, "Share deal"))

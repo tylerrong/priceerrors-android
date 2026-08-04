@@ -34,6 +34,77 @@ check(!hasAnyReleaseSigningValue || hasCompleteReleaseSigning) {
         "or remove them all to produce an unsigned local release bundle."
 }
 
+// A release build with no console values compiles and packages perfectly well —
+// it is only unusable once installed, because release disables the debug email
+// path and Google sign-in needs a client ID. That failure is invisible until a
+// tester or reviewer hits it, so check the shippable config up front instead.
+//
+// Pass -PPRICEERRORS_ALLOW_INCOMPLETE_RELEASE=true to build an unsigned release
+// anyway, which is what the R8/lint validation pass in the README wants.
+val producesReleaseArtifact = gradle.startParameter.taskNames.any { requested ->
+    when (requested.substringAfterLast(':')) {
+        "assembleRelease", "bundleRelease", "assemble", "bundle", "build" -> true
+        else -> false
+    }
+}
+val allowIncompleteRelease =
+    releaseSetting("PRICEERRORS_ALLOW_INCOMPLETE_RELEASE")?.toBoolean() ?: false
+
+if (producesReleaseArtifact) {
+    val backendKeys = listOf(
+        "PRICEERRORS_SERVER_BASE_URL",
+        "PRICEERRORS_SERVER_API_KEY",
+        "PRICEERRORS_SUPABASE_URL",
+        "PRICEERRORS_SUPABASE_ANON_KEY",
+    )
+    val blockers = buildList {
+        if (buildSetting("PRICEERRORS_GOOGLE_WEB_CLIENT_ID").isBlank()) {
+            add(
+                "PRICEERRORS_GOOGLE_WEB_CLIENT_ID is missing. Release builds disable the debug " +
+                    "email path, so without it the app has no way to sign in at all.",
+            )
+        }
+        val missingBackend = backendKeys.filter { buildSetting(it).isBlank() }
+        if (missingBackend.isNotEmpty()) {
+            add(
+                "Backend config is incomplete (${missingBackend.joinToString()}). The app would " +
+                    "ship against the built-in sample feed.",
+            )
+        }
+    }
+
+    val warnings = buildList {
+        val firebaseKeys = listOf(
+            "PRICEERRORS_FIREBASE_APPLICATION_ID",
+            "PRICEERRORS_FIREBASE_API_KEY",
+            "PRICEERRORS_FIREBASE_PROJECT_ID",
+            "PRICEERRORS_FIREBASE_SENDER_ID",
+        )
+        if (firebaseKeys.any { buildSetting(it).isBlank() }) {
+            add("Firebase is not configured — push alerts will be silently unavailable.")
+        }
+        if (!hasCompleteReleaseSigning) {
+            add("No PRICEERRORS_RELEASE_* signing values — the output will be unsigned.")
+        }
+    }
+
+    warnings.forEach { logger.warn("w: release config — $it") }
+
+    if (blockers.isNotEmpty()) {
+        val detail = blockers.joinToString("\n") { "  - $it" }
+        if (allowIncompleteRelease) {
+            logger.warn("w: release config problems ignored via PRICEERRORS_ALLOW_INCOMPLETE_RELEASE:\n$detail")
+        } else {
+            error(
+                "This release build would not be shippable:\n$detail\n\n" +
+                    "Set the values as Gradle properties (~/.gradle/gradle.properties) or CI " +
+                    "environment variables. To build anyway for R8/lint validation, pass " +
+                    "-PPRICEERRORS_ALLOW_INCOMPLETE_RELEASE=true.",
+            )
+        }
+    }
+}
+
 android {
     namespace = "app.priceerrors"
     compileSdk = 37

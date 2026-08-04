@@ -43,9 +43,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- The web host must publish a matching .well-known/assetlinks.json
-                 before Play Store release. Both paths are kept while existing
-                 iOS/fake fixtures use /deals and the public site uses /deal. -->
+            <!-- Both hosts are declared because the site 307s the apex to www,
+                 so shared and indexed links are canonically www. Each declared
+                 host must serve its own .well-known/assetlinks.json over HTTPS
+                 *without a redirect* before release, or verification fails.
+                 Both paths are kept while existing iOS/fake fixtures use /deals
+                 and the public site uses /deal. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
 
@@ -54,6 +57,7 @@
 
                 <data android:scheme="https" />
                 <data android:host="priceerrors.app" />
+                <data android:host="www.priceerrors.app" />
                 <data android:pathPrefix="/deal/" />
                 <data android:pathPrefix="/deals/" />
             </intent-filter>

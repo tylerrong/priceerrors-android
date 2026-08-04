@@ -32,8 +32,10 @@ Cloud Messaging are implemented. They are configuration-safe: missing console
 values produce an explicit unavailable state instead of granting a fake account,
 subscription, or notification registration.
 
-Provide non-secret project identifiers through user-level Gradle properties or
-same-named CI environment variables:
+Provide non-secret project identifiers through user-level Gradle properties
+(`~/.gradle/gradle.properties`) or same-named CI environment variables. Do **not**
+put them in this repository's `gradle.properties` — that file is tracked, and the
+repository is public:
 
 ```text
 PRICEERRORS_GOOGLE_WEB_CLIENT_ID=...apps.googleusercontent.com
@@ -86,6 +88,21 @@ Before a store upload, run the release path as well:
 
 ```bash
 ./gradlew clean testDebugUnitTest lintRelease bundleRelease
+```
+
+Always start with `clean`: stale files under `app/build/intermediates` (for
+example Finder-duplicated `... 2.ttf` fonts) fail resource-name validation even
+when the source tree is correct.
+
+`assembleRelease`/`bundleRelease` refuse to build when the result would not be
+shippable — a missing `PRICEERRORS_GOOGLE_WEB_CLIENT_ID` leaves the app with no
+sign-in path at all, because release disables the debug email fallback, and
+missing backend values would ship the sample feed. Missing Firebase config and
+unsigned output are reported as warnings rather than failures. To produce an
+unsigned release purely for R8/lint validation, opt out explicitly:
+
+```bash
+./gradlew bundleRelease -PPRICEERRORS_ALLOW_INCOMPLETE_RELEASE=true
 ```
 
 R8 code shrinking and resource shrinking are enabled for release builds. Keep
@@ -168,6 +185,15 @@ needed for non-Play testing):
   }
 ]
 ```
+
+The manifest declares **both** `priceerrors.app` and `www.priceerrors.app`,
+because the site 307s the apex to www, so indexed and shared links are
+canonically www. Each declared host must serve its own copy of the file.
+
+This is the easy one to get wrong: the apex currently redirects *everything*,
+including `/.well-known/assetlinks.json`. Android will not follow a redirect when
+verifying, so the apex must serve that path directly (a Vercel rewrite/header
+exception) or verification silently fails for it.
 
 Serve it as JSON over HTTPS without redirects, then verify on a device:
 
