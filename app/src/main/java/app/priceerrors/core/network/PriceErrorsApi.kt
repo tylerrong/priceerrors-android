@@ -160,7 +160,7 @@ class PriceErrorsApi(
                 }
 
                 response.use {
-                    val payload = it.body?.string().orEmpty()
+                    val payload = it.body.string()
                     if (it.isSuccessful) decode(payload) else Result.failure(errorFor(it, payload))
                 }
             } catch (error: IOException) {

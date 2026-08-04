@@ -60,6 +60,100 @@ class SupabaseAuthClient(
         }
 
     /**
+     * Signs in with an email and password against the same Supabase project the
+     * iOS client uses, so an account created on either platform works on both.
+     */
+    suspend fun signInWithEmail(email: String, password: String): Result<AuthIdentity> =
+        post(
+            url = "$supabaseUrl/auth/v1/token?grant_type=password",
+            body = buildString {
+                append("{\"email\":").append(json.encodeToString(email.trim()))
+                append(",\"password\":").append(json.encodeToString(password))
+                append("}")
+            },
+        ).mapCatching { payload ->
+            val decoded = json.decodeFromString<SupabaseTokenResponse>(payload)
+            val userId = decoded.user?.id
+                ?: throw ApiError.Decoding(IllegalStateException("Session had no user id."))
+            val session = SupabaseSession(
+                accessToken = decoded.accessToken,
+                refreshToken = decoded.refreshToken,
+                expiresAt = java.time.Instant.now().plusSeconds(decoded.expiresIn),
+                userId = userId,
+                email = decoded.user.email,
+            )
+            adopt(session)
+            AuthIdentity(
+                displayName = displayNameFor(decoded.user.userMetadata?.fullName, decoded.user.email ?: email),
+                email = decoded.user.email ?: email.trim(),
+                idToken = decoded.accessToken,
+                profilePhotoUrl = null,
+            )
+        }
+
+    /**
+     * Creates an email account. [name] is stored as `full_name` in user
+     * metadata, matching what iOS writes, so the display name survives a
+     * sign-in on the other platform.
+     */
+    suspend fun signUpWithEmail(
+        email: String,
+        password: String,
+        name: String,
+    ): Result<EmailSignUpResult> =
+        post(
+            url = "$supabaseUrl/auth/v1/signup",
+            body = buildString {
+                append("{\"email\":").append(json.encodeToString(email.trim()))
+                append(",\"password\":").append(json.encodeToString(password))
+                if (name.isNotBlank()) {
+                    append(",\"data\":{\"full_name\":").append(json.encodeToString(name.trim())).append("}")
+                }
+                append("}")
+            },
+        ).mapCatching { payload ->
+            val decoded = json.decodeFromString<SupabaseSignUpResponse>(payload)
+            val accessToken = decoded.accessToken
+            val refreshToken = decoded.refreshToken
+            val userId = decoded.user?.id ?: decoded.id
+
+            // No tokens means the project requires email confirmation. Report it
+            // rather than pretending to be signed in — every API call would 401.
+            if (accessToken.isNullOrBlank() || refreshToken.isNullOrBlank() || userId.isNullOrBlank()) {
+                return@mapCatching EmailSignUpResult.ConfirmationRequired
+            }
+
+            val resolvedEmail = decoded.user?.email ?: decoded.email ?: email.trim()
+            val session = SupabaseSession(
+                accessToken = accessToken,
+                refreshToken = refreshToken,
+                expiresAt = java.time.Instant.now().plusSeconds(decoded.expiresIn),
+                userId = userId,
+                email = resolvedEmail,
+            )
+            adopt(session)
+            EmailSignUpResult.SignedIn(
+                identity = AuthIdentity(
+                    displayName = displayNameFor(name.ifBlank { null }, resolvedEmail),
+                    email = resolvedEmail,
+                    idToken = accessToken,
+                    profilePhotoUrl = null,
+                ),
+                session = session,
+            )
+        }
+
+    private fun adopt(session: SupabaseSession) {
+        sessionStore.save(session)
+        _session.value = session
+    }
+
+    private fun displayNameFor(fullName: String?, email: String): String =
+        fullName?.trim()?.takeIf(String::isNotEmpty)
+            ?: email.substringBefore('@').takeIf(String::isNotEmpty)
+            ?: "User"
+
+    /**
      * Returns a valid access token, refreshing first if the current one has
      * expired. Null means the caller must sign in again — either there is no
      * session, or the refresh token itself was rejected.
@@ -100,6 +194,49 @@ class SupabaseAuthClient(
         _session.value = null
     }
 
+    /**
+     * POSTs to a Supabase auth endpoint and returns the raw 2xx body.
+     *
+     * Errors are classified through [EmailAuthError] first, because Supabase
+     * distinguishes "wrong password" from "unconfirmed email" only in the
+     * response prose. Anything unrecognised falls back to the generic mapping.
+     */
+    private suspend fun post(url: String, body: String): Result<String> {
+        if (supabaseUrl.isBlank() || anonKey.isBlank()) {
+            return Result.failure(ApiError.NotConfigured)
+        }
+
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("apikey", anonKey)
+            .addHeader("Content-Type", "application/json")
+            .post(body.toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+
+        return withContext(Dispatchers.IO) {
+            try {
+                httpClient.newCall(request).execute().use { response ->
+                    val payload = response.body.string()
+                    if (response.isSuccessful) {
+                        Result.success(payload)
+                    } else {
+                        Result.failure(
+                            EmailAuthError.from(payload)
+                                ?: when (response.code) {
+                                    401, 400 -> ApiError.Unauthorized
+                                    422 -> ApiError.Server(response.code, payload)
+                                    429 -> ApiError.RateLimited
+                                    else -> ApiError.Server(response.code, payload)
+                                },
+                        )
+                    }
+                }
+            } catch (error: IOException) {
+                Result.failure(ApiError.Transport(error))
+            }
+        }
+    }
+
     private suspend fun requestToken(query: String, body: String): Result<SupabaseSession> {
         if (supabaseUrl.isBlank() || anonKey.isBlank()) {
             return Result.failure(ApiError.NotConfigured)
@@ -115,7 +252,7 @@ class SupabaseAuthClient(
         return withContext(Dispatchers.IO) {
             try {
                 httpClient.newCall(request).execute().use { response ->
-                    val payload = response.body?.string().orEmpty()
+                    val payload = response.body.string()
                     if (!response.isSuccessful) {
                         return@use Result.failure(
                             // Supabase answers 400 for a bad/expired grant just

@@ -39,6 +39,29 @@ internal data class SupabaseTokenResponse(
 internal data class SupabaseUserDto(
     val id: String,
     val email: String? = null,
+    @SerialName("user_metadata") val userMetadata: SupabaseUserMetadataDto? = null,
+)
+
+/** iOS writes the signer's name here at sign-up; read it back for display. */
+@Serializable
+internal data class SupabaseUserMetadataDto(
+    @SerialName("full_name") val fullName: String? = null,
+)
+
+/**
+ * Wire shape of `/auth/v1/signup`. Unlike the token endpoint this returns the
+ * bare user object — with no tokens — when the project requires email
+ * confirmation, so every session field has to be optional.
+ */
+@Serializable
+internal data class SupabaseSignUpResponse(
+    @SerialName("access_token") val accessToken: String? = null,
+    @SerialName("refresh_token") val refreshToken: String? = null,
+    @SerialName("expires_in") val expiresIn: Long = 3600,
+    val user: SupabaseUserDto? = null,
+    // Confirmation-required responses put the user at the top level.
+    val id: String? = null,
+    val email: String? = null,
 )
 
 /** Where a [SupabaseSession] is kept between launches. */

@@ -62,6 +62,7 @@ import app.priceerrors.ui.theme.SpaceGrotesk
 import app.priceerrors.ui.accessibility.PriceErrorsTestTags
 import app.priceerrors.core.auth.AuthConfigurationException
 import app.priceerrors.core.auth.AuthIdentity
+import app.priceerrors.core.auth.EmailAuthError
 import kotlinx.coroutines.launch
 
 private enum class AuthMode { SIGN_UP, SIGN_IN }
@@ -73,6 +74,10 @@ private val AuthButtonHeight = 56.dp
 fun AuthScreen(
     onAuthenticated: (name: String, email: String) -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * Local-only email sign-in for builds with no backend, where the sample feed
+     * stands in for the server. Ignored whenever [onEmailSignIn] is wired up.
+     */
     allowLocalEmailAuth: Boolean = true,
     /**
      * Whether a successful [onGoogleAuthenticate] may complete sign-in. False
@@ -83,12 +88,24 @@ fun AuthScreen(
     onGoogleAuthenticate: suspend () -> Result<AuthIdentity> = {
         Result.failure(AuthConfigurationException("Google sign-in is not configured."))
     },
+    /** Null when this build has no account service to authenticate against. */
+    onEmailSignIn: (suspend (email: String, password: String) -> Result<AuthIdentity>)? = null,
+    /**
+     * Returns null on success-pending-confirmation, so the screen can tell the
+     * user to check their inbox instead of claiming they are signed in.
+     */
+    onEmailSignUp: (
+        suspend (name: String, email: String, password: String) -> Result<AuthIdentity?>
+    )? = null,
 ) {
     var mode by rememberSaveable { mutableStateOf(AuthMode.SIGN_UP) }
     var name by rememberSaveable { mutableStateOf("") }
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var errorMessage by rememberSaveable { mutableStateOf("") }
+    // Advice rather than failure — e.g. the address exists under Google, or the
+    // account needs confirming. Shown in a calmer style than an error.
+    var hintMessage by rememberSaveable { mutableStateOf("") }
     var isLoading by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -237,20 +254,77 @@ fun AuthScreen(
             )
         }
 
+        if (hintMessage.isNotEmpty()) {
+            Text(
+                hintMessage,
+                modifier = Modifier
+                    .padding(top = 10.dp)
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f),
+                fontFamily = SpaceGrotesk,
+                fontWeight = FontWeight.Medium,
+                fontSize = 13.sp,
+            )
+        }
+
         Button(
             onClick = {
+                hintMessage = ""
                 errorMessage = when {
                     mode == AuthMode.SIGN_UP && name.isBlank() -> "Enter your full name."
                     !email.contains('@') -> "Enter a valid email address."
                     password.length < 6 -> "Password must be at least 6 characters."
                     else -> ""
                 }
-                if (errorMessage.isEmpty()) {
-                    if (allowLocalEmailAuth) {
-                        onAuthenticated(name.ifBlank { email.substringBefore('@') }, email.trim())
-                    } else {
-                        errorMessage = "Email accounts will be enabled when the account service is connected."
+                if (errorMessage.isNotEmpty()) return@Button
+
+                val signIn = onEmailSignIn
+                val signUp = onEmailSignUp
+                when {
+                    // Real account service: authenticate against Supabase.
+                    signIn != null && signUp != null -> {
+                        isLoading = true
+                        scope.launch {
+                            val outcome = if (mode == AuthMode.SIGN_UP) {
+                                signUp(name, email, password)
+                            } else {
+                                signIn(email, password).map { it }
+                            }
+                            isLoading = false
+                            outcome
+                                .onSuccess { identity ->
+                                    if (identity == null) {
+                                        // Sign-up succeeded but needs confirming.
+                                        hintMessage =
+                                            "Account created. Check your inbox to confirm your email, then sign in."
+                                        mode = AuthMode.SIGN_IN
+                                        password = ""
+                                    } else {
+                                        onAuthenticated(identity.displayName, identity.email)
+                                    }
+                                }
+                                .onFailure { error ->
+                                    when (error) {
+                                        is EmailAuthError.AlreadyRegistered -> {
+                                            hintMessage = error.message.orEmpty()
+                                            mode = AuthMode.SIGN_IN
+                                        }
+                                        is EmailAuthError.UseSocialSignIn,
+                                        is EmailAuthError.EmailNotConfirmed,
+                                        -> hintMessage = error.message.orEmpty()
+                                        else -> errorMessage = error.message
+                                            ?.takeIf(String::isNotBlank)
+                                            ?: "Sign in failed. Try again."
+                                    }
+                                }
+                        }
                     }
+                    // No backend in this build — the sample feed stands in.
+                    allowLocalEmailAuth ->
+                        onAuthenticated(name.ifBlank { email.substringBefore('@') }, email.trim())
+
+                    else ->
+                        errorMessage = "Email accounts will be enabled when the account service is connected."
                 }
             },
             enabled = !isLoading,

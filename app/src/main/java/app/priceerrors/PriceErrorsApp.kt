@@ -35,6 +35,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.priceerrors.core.data.DealRepository
 import app.priceerrors.core.data.NetworkDealRepository
+import app.priceerrors.core.auth.EmailSignUpResult
 import app.priceerrors.core.auth.GoogleCredentialAuthClient
 import app.priceerrors.core.auth.SupabaseAuthClient
 import app.priceerrors.core.network.ApiConfig
@@ -362,11 +363,35 @@ fun PriceErrorsApp(
                             AppStage.PAYWALL.name
                         }
                     },
+                    // Only reached in builds with no backend, where the sample
+                    // feed stands in for the server. A configured build always
+                    // authenticates against Supabase via the callbacks below.
                     allowLocalEmailAuth = BuildConfig.DEBUG,
                     // With a backend configured the Google token is exchanged
                     // for a real Supabase session below, so sign-in can
                     // complete. Without one there is nothing to verify against.
                     canCompleteGoogleSignIn = ApiConfig.isConfigured || BuildConfig.DEBUG,
+                    // Email/password against the same Supabase project as iOS,
+                    // so one account works on both platforms.
+                    onEmailSignIn = if (ApiConfig.isConfigured) {
+                        { email, password -> supabaseAuthClient.signInWithEmail(email, password) }
+                    } else {
+                        null
+                    },
+                    onEmailSignUp = if (ApiConfig.isConfigured) {
+                        { name, email, password ->
+                            supabaseAuthClient.signUpWithEmail(email, password, name).map { result ->
+                                when (result) {
+                                    is EmailSignUpResult.SignedIn -> result.identity
+                                    // Null tells the screen to ask the user to
+                                    // confirm their address instead of entering.
+                                    EmailSignUpResult.ConfirmationRequired -> null
+                                }
+                            }
+                        }
+                    } else {
+                        null
+                    },
                     onGoogleAuthenticate = {
                         val currentActivity = activity
                         if (currentActivity == null) {
