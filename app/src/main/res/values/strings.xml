@@ -1,18 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">PriceErrors</string>
-    <!-- Apex host, not www: the deep-link filter in AndroidManifest and
-         PriceErrorsDeepLink both match priceerrors.app exactly, and website_url
-         is what builds notification deep links. The site 307s apex to www, which
-         browsers follow transparently.
+    <!-- www, not the apex: the site 307s apex to www, and Android does not
+         follow redirects when verifying app links — so only www can serve a
+         reachable .well-known/assetlinks.json. website_url is what builds
+         notification deep links, so it must point at the host that verifies.
+         Both hosts are still declared in AndroidManifest and trusted by
+         PriceErrorsDeepLink, so apex links keep working if the redirect is
+         ever removed.
 
          Legal pages carry the .html extension because the marketing site is
          served as static files. Keep these in step with the website repo. -->
-    <string name="website_url" translatable="false">https://priceerrors.app</string>
-    <string name="privacy_policy_url" translatable="false">https://priceerrors.app/privacy.html</string>
-    <string name="terms_of_service_url" translatable="false">https://priceerrors.app/terms.html</string>
-    <string name="support_url" translatable="false">https://priceerrors.app/support.html</string>
-    <string name="account_deletion_url" translatable="false">https://priceerrors.app/delete-account.html</string>
+    <string name="website_url" translatable="false">https://www.priceerrors.app</string>
+    <string name="privacy_policy_url" translatable="false">https://www.priceerrors.app/privacy.html</string>
+    <string name="terms_of_service_url" translatable="false">https://www.priceerrors.app/terms.html</string>
+    <string name="support_url" translatable="false">https://www.priceerrors.app/support.html</string>
+    <string name="account_deletion_url" translatable="false">https://www.priceerrors.app/delete-account.html</string>
     <string name="notification_channel_deals">Deal alerts</string>
     <string name="notification_channel_deals_description">Time-sensitive PriceErrors deals and price-drop alerts.</string>
 </resources>
