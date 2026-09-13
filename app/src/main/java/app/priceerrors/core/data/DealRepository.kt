@@ -17,5 +17,12 @@ interface DealRepository {
 
     fun observeMetadata(): Flow<DealFeedMetadata?>
 
-    suspend fun refresh(query: DealFeedQuery = DealFeedQuery()): Result<Unit>
+    suspend fun refresh(
+        query: DealFeedQuery = DealFeedQuery(),
+        forceFull: Boolean = false,
+    ): Result<Unit>
+
+    suspend fun fetchDeal(id: String): Result<Deal>
+
+    fun upsertDeal(deal: Deal)
 }

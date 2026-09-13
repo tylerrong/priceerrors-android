@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -24,10 +25,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.LocalOffer
-import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.LocalOffer
-import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -56,6 +57,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.priceerrors.R
@@ -68,6 +70,7 @@ import app.priceerrors.ui.theme.Mint
 import app.priceerrors.ui.theme.isAppInDarkTheme
 import app.priceerrors.ui.theme.NotWorkingRed
 import app.priceerrors.ui.theme.SpaceGrotesk
+import coil3.compose.AsyncImage
 import kotlinx.coroutines.delay
 import java.time.Duration
 import java.time.Instant
@@ -194,12 +197,33 @@ fun DealArtwork(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Fit,
 ) {
-    Image(
-        painter = painterResource(dealArtworkResource(deal.category, portrait)),
-        contentDescription = deal.title,
-        modifier = modifier,
-        contentScale = contentScale,
-    )
+    val placeholder = painterResource(dealArtworkResource(deal.category, portrait))
+    val stageColor = dealVisuals(deal.category, isAppInDarkTheme).background
+    val imageUrl = deal.imageUrl?.trim()?.takeIf(String::isNotEmpty)
+
+    Box(
+        modifier = modifier.background(stageColor),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (imageUrl == null) {
+            Image(
+                painter = placeholder,
+                contentDescription = deal.title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit,
+            )
+        } else {
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = deal.title,
+                modifier = Modifier.fillMaxSize(),
+                placeholder = placeholder,
+                error = placeholder,
+                fallback = placeholder,
+                contentScale = contentScale,
+            )
+        }
+    }
 }
 
 @DrawableRes
@@ -283,6 +307,79 @@ fun CategoryTag(
     )
 }
 
+/**
+ * Price, struck-through original price, and the savings chip used by every
+ * feed and browse card. Free deals omit the redundant "100% OFF" chip.
+ */
+@Composable
+fun DealCardPriceGroup(
+    deal: Deal,
+    priceSize: Int,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 9.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 8.dp),
+        ) {
+            Text(
+                text = formatPrice(deal.priceInCents, deal.currencyCode),
+                fontFamily = SpaceGrotesk,
+                fontWeight = FontWeight.Bold,
+                fontSize = priceSize.sp,
+                lineHeight = priceSize.sp,
+                letterSpacing = (-(priceSize * 0.04)).sp,
+                maxLines = 1,
+            )
+            if (deal.originalPriceInCents > deal.priceInCents) {
+                val originalSize = priceSize * if (compact) 0.75f else 0.85f
+                Text(
+                    text = formatPrice(deal.originalPriceInCents, deal.currencyCode),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                    fontFamily = SpaceGrotesk,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = originalSize.sp,
+                    lineHeight = originalSize.sp,
+                    textDecoration = TextDecoration.LineThrough,
+                    maxLines = 1,
+                )
+            }
+        }
+
+        if (deal.priceInCents > 0L && deal.discountPercent > 0) {
+            Surface(
+                color = Mint,
+                contentColor = AppDark,
+                shape = CircleShape,
+            ) {
+                val discountSize = if (compact) {
+                    maxOf(11f, priceSize * 0.68f)
+                } else {
+                    maxOf(18f, priceSize * 0.78f)
+                }
+                Text(
+                    text = "${deal.discountPercent}% OFF",
+                    modifier = Modifier.padding(
+                        horizontal = if (compact) 8.dp else 11.dp,
+                        vertical = if (compact) 5.dp else 7.dp,
+                    ),
+                    fontFamily = SpaceGrotesk,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = discountSize.sp,
+                    lineHeight = discountSize.sp,
+                    letterSpacing = 0.15.sp,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
 fun relativeDealTime(postedAt: Instant, now: Instant = Instant.now()): String {
     val elapsedMinutes = Duration.between(postedAt, now).toMinutes().coerceAtLeast(0)
     val zone = ZoneId.systemDefault()
@@ -292,12 +389,14 @@ fun relativeDealTime(postedAt: Instant, now: Instant = Instant.now()): String {
     val today = nowDateTime.toLocalDate()
     val clock = DateTimeFormatter.ofPattern("h:mm a", Locale.US)
     return when {
-        elapsedMinutes < 1 -> "JUST NOW"
-        elapsedMinutes < 60 -> "${elapsedMinutes}M AGO"
-        elapsedMinutes < 360 -> "${elapsedMinutes / 60}H AGO"
-        postedDate == today -> "TODAY · ${postedDateTime.format(clock)}"
-        postedDate == today.minus(1, ChronoUnit.DAYS) -> "YESTERDAY · ${postedDateTime.format(clock)}"
-        else -> postedDateTime.format(DateTimeFormatter.ofPattern("MMM d", Locale.US)).uppercase(Locale.US)
+        elapsedMinutes < 1 -> "Just now"
+        elapsedMinutes < 60 -> "${elapsedMinutes}m ago"
+        elapsedMinutes < 360 -> "${elapsedMinutes / 60}h ago"
+        postedDate == today -> "Today · ${postedDateTime.format(clock)}"
+        postedDate == today.minus(1, ChronoUnit.DAYS) -> "Yesterday · ${postedDateTime.format(clock)}"
+        else -> "${postedDateTime.format(DateTimeFormatter.ofPattern("MMM d", Locale.US))} · ${
+            postedDateTime.format(clock)
+        }"
     }
 }
 
@@ -372,12 +471,12 @@ fun FloatingTabBar(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 FloatingTabIcon(
-                    label = "Community",
-                    testTag = PriceErrorsTestTags.COMMUNITY_TAB,
-                    selected = selectedTab == MainTab.COMMUNITY,
-                    onClick = { onTabSelected(MainTab.COMMUNITY) },
-                    activeIcon = { Icon(Icons.Filled.People, contentDescription = null) },
-                    inactiveIcon = { Icon(Icons.Outlined.People, contentDescription = null) },
+                    label = "Alerts",
+                    testTag = PriceErrorsTestTags.ALERTS_TAB,
+                    selected = selectedTab == MainTab.ALERTS,
+                    onClick = { onTabSelected(MainTab.ALERTS) },
+                    activeIcon = { Icon(Icons.Filled.Notifications, contentDescription = null) },
+                    inactiveIcon = { Icon(Icons.Outlined.Notifications, contentDescription = null) },
                 )
                 FloatingTabIcon(
                     label = "Browse",
@@ -388,7 +487,7 @@ fun FloatingTabBar(
                     inactiveIcon = { Icon(Icons.Outlined.LocalOffer, contentDescription = null) },
                 )
                 FloatingTabIcon(
-                    label = "Profile",
+                    label = "You",
                     testTag = PriceErrorsTestTags.PROFILE_TAB,
                     selected = selectedTab == MainTab.PROFILE,
                     onClick = { onTabSelected(MainTab.PROFILE) },

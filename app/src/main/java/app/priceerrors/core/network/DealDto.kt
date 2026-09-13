@@ -39,8 +39,11 @@ data class DealDto(
 data class DealsResponseDto(
     val data: List<DealDto> = emptyList(),
     val total: Int = 0,
+    @SerialName("feed_total") val feedTotal: Int? = null,
     val page: Int = 1,
     val limit: Int = 100,
+    @SerialName("sync_cursor") val syncCursor: String? = null,
+    @SerialName("active_deal_ids") val activeDealIds: List<String>? = null,
     val isPro: Boolean = false,
     val freeRemaining: Int? = null,
     val freeDailyLimit: Int = 0,
@@ -48,14 +51,72 @@ data class DealsResponseDto(
     val userVotes: Map<String, String> = emptyMap(),
 )
 
+/** Combined multi-page feed payload, mirroring iOS `DealsFetchResult`. */
+data class DealsFetchResult(
+    val deals: List<DealDto>,
+    val total: Int,
+    val syncCursor: String?,
+    val activeDealIds: List<String>?,
+    val isPro: Boolean,
+    val freeRemaining: Int?,
+    val freeDailyLimit: Int,
+    val claimedToday: List<String>,
+    val userVotes: Map<String, String>,
+    val pageSize: Int,
+)
+
+fun DealsResponseDto.authoritativeTotal(): Int = feedTotal ?: total
+
+fun DealsResponseDto.toFetchResult(
+    deals: List<DealDto> = data,
+    claimed: List<String> = claimedToday,
+    votes: Map<String, String> = userVotes,
+): DealsFetchResult =
+    DealsFetchResult(
+        deals = deals,
+        total = authoritativeTotal(),
+        syncCursor = syncCursor,
+        activeDealIds = activeDealIds,
+        isPro = isPro,
+        freeRemaining = freeRemaining,
+        freeDailyLimit = freeDailyLimit,
+        claimedToday = claimed,
+        userVotes = votes,
+        pageSize = limit.coerceAtLeast(1),
+    )
+
 @Serializable
 data class ClaimResponseDto(
     val ok: Boolean? = null,
+    val status: String? = null,
+    val trackable: Boolean = false,
+    val price: Double? = null,
+    @SerialName("original_price") val originalPrice: Double? = null,
+    @SerialName("potential_savings") val potentialSavings: Double? = null,
+    @SerialName("confirmed_at") val confirmedAt: String? = null,
     val isPro: Boolean? = null,
     val freeRemaining: Int? = null,
     val freeDailyLimit: Int? = null,
     val alreadyClaimed: Boolean? = null,
     val reason: String? = null,
+)
+
+@Serializable
+data class ClaimConfirmationResponseDto(
+    val ok: Boolean? = null,
+    val status: String? = null,
+    val trackable: Boolean = false,
+    @SerialName("potential_savings") val potentialSavings: Double? = null,
+    @SerialName("month_savings") val monthSavings: Double = 0.0,
+    @SerialName("lifetime_savings") val lifetimeSavings: Double = 0.0,
+    val currency: String = "USD",
+)
+
+@Serializable
+data class SavingsSummaryDto(
+    @SerialName("month_savings") val monthSavings: Double = 0.0,
+    @SerialName("lifetime_savings") val lifetimeSavings: Double = 0.0,
+    val currency: String = "USD",
 )
 
 @Serializable
@@ -128,7 +189,7 @@ fun DealsResponseDto.toDomainDeals(): List<Deal> =
 
 fun DealsResponseDto.toMetadata(): DealFeedMetadata =
     DealFeedMetadata(
-        total = total,
+        total = authoritativeTotal(),
         page = page,
         pageSize = limit,
         access = DealFeedAccess(

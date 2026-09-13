@@ -48,4 +48,21 @@ class AuthScreenTest {
         ).assertIsDisplayed()
         compose.onAllNodesWithText("G", useUnmergedTree = true).assertCountEquals(0)
     }
+
+    @Test
+    fun onboardingProgressAndSignInCopyMatchTheFlow() {
+        compose.setContent {
+            PriceErrorsTheme {
+                AuthScreen(
+                    onAuthenticated = { _, _ -> },
+                    showOnboardingProgress = true,
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("Page 5 of 6").assertIsDisplayed()
+        compose.onNodeWithText("Already have an account? Log in").performClick()
+        compose.onNodeWithText("Welcome\nback.").assertIsDisplayed()
+        compose.onNodeWithText("Sign in with Google").assertIsDisplayed()
+    }
 }

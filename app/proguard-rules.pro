@@ -1,5 +1,6 @@
-# Preserve the metadata used by Kotlin, Compose previews, serializers, and
-# reflection-based SDKs without broadly disabling R8 optimization.
+# Facebook / Meta Ads and PostHog keep their reflective entry points.
+-keep class com.facebook.** { *; }
+-keep class com.posthog.** { *; }
 -keepattributes Signature,InnerClasses,EnclosingMethod
 -keepattributes RuntimeVisibleAnnotations,RuntimeInvisibleAnnotations,AnnotationDefault
 

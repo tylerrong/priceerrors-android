@@ -10,4 +10,10 @@ class ProfileHelpersTest {
         assertEquals("TY", profileInitials("Tyler"))
         assertEquals("ME", profileInitials("   "))
     }
+
+    @Test
+    fun `savings use US currency and never render negative values`() {
+        assertEquals("$1,234.50", formatSavings(1234.5))
+        assertEquals("$0.00", formatSavings(-10.0))
+    }
 }

@@ -1,8 +1,11 @@
 package app.priceerrors.feature.paywall
 
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import app.priceerrors.ui.accessibility.PriceErrorsTestTags
 import app.priceerrors.ui.theme.PriceErrorsTheme
@@ -32,5 +35,26 @@ class PaywallScreenTest {
         compose.onNodeWithTag(PriceErrorsTestTags.PAYWALL_PURCHASE).performClick()
 
         compose.runOnIdle { assertEquals(PaywallPlan.MONTHLY, purchasedPlan) }
+    }
+
+    @Test
+    fun onboardingProgressAndLoadingCopyAreExposed() {
+        compose.setContent {
+            PriceErrorsTheme {
+                PaywallScreen(
+                    allowDismiss = false,
+                    onDismiss = {},
+                    onPurchase = {},
+                    onRestore = {},
+                    isLoading = true,
+                    onboardingStep = 1,
+                    onboardingTotalSteps = 4,
+                )
+            }
+        }
+
+        compose.onNodeWithTag("paywall_progress")
+            .assertContentDescriptionEquals("Onboarding progress 2 of 4")
+        compose.onNodeWithText("Working…").assertIsDisplayed()
     }
 }

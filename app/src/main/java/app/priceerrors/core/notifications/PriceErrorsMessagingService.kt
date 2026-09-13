@@ -24,10 +24,12 @@ class PriceErrorsMessagingService : FirebaseMessagingService() {
         val body = message.notification?.body
             ?: message.data["body"]
             ?: "A new deal just dropped."
+        val subtitle = message.data["subtitle"]
         val dealId = message.data["dealId"] ?: message.data["deal_id"]
         NotificationCoordinator(applicationContext).showDealNotification(
             title = title,
             body = body,
+            subtitle = subtitle,
             dealId = dealId,
         )
     }

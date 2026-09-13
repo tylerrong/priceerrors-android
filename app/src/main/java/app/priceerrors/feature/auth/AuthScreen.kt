@@ -1,8 +1,10 @@
 package app.priceerrors.feature.auth
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,7 +44,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
@@ -56,19 +62,23 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.priceerrors.R
+import app.priceerrors.feature.onboarding.OnboardingProgressHeader
 import app.priceerrors.ui.theme.AppDark
-import app.priceerrors.ui.theme.Mint
 import app.priceerrors.ui.theme.SpaceGrotesk
 import app.priceerrors.ui.accessibility.PriceErrorsTestTags
 import app.priceerrors.core.auth.AuthConfigurationException
 import app.priceerrors.core.auth.AuthIdentity
 import app.priceerrors.core.auth.EmailAuthError
+import app.priceerrors.core.auth.GoogleOAuthPending
+import app.priceerrors.core.auth.GoogleSignInCancelled
+import app.priceerrors.core.analytics.PostHogAnalytics
 import kotlinx.coroutines.launch
 
 private enum class AuthMode { SIGN_UP, SIGN_IN }
 
 /** Both auth buttons share a height so they read as one stack. */
 private val AuthButtonHeight = 56.dp
+private val AuthCobalt = Color(0xFF4F6EF7)
 
 @Composable
 fun AuthScreen(
@@ -97,6 +107,10 @@ fun AuthScreen(
     onEmailSignUp: (
         suspend (name: String, email: String, password: String) -> Result<AuthIdentity?>
     )? = null,
+    onBack: (() -> Unit)? = null,
+    showOnboardingProgress: Boolean = false,
+    onboardingTotalSteps: Int = 6,
+    onboardingCurrentStep: Int = 4,
 ) {
     var mode by rememberSaveable { mutableStateOf(AuthMode.SIGN_UP) }
     var name by rememberSaveable { mutableStateOf("") }
@@ -108,20 +122,31 @@ fun AuthScreen(
     var hintMessage by rememberSaveable { mutableStateOf("") }
     var isLoading by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
+
+    BackHandler(enabled = onBack != null && !isLoading) { onBack?.invoke() }
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(AuthCobalt)
             .statusBarsPadding()
             .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 28.dp)
+            .authEdgeBackGesture(if (isLoading) null else onBack, haptics)
             .testTag(PriceErrorsTestTags.AUTH_SCREEN),
     ) {
+        if (showOnboardingProgress) {
+            OnboardingProgressHeader(
+                total = onboardingTotalSteps,
+                current = onboardingCurrentStep,
+            )
+        }
         Text(
             text = if (mode == AuthMode.SIGN_UP) "Never miss a\nprice error." else "Welcome\nback.",
-            modifier = Modifier.padding(top = 56.dp),
+            modifier = Modifier.padding(top = if (showOnboardingProgress) 20.dp else 56.dp),
+            color = Color.White,
             fontFamily = SpaceGrotesk,
             fontWeight = FontWeight.Bold,
             fontSize = 38.sp,
@@ -136,13 +161,15 @@ fun AuthScreen(
             },
             modifier = Modifier.padding(top = 6.dp, bottom = 36.dp),
             style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.50f),
+            color = Color.White.copy(alpha = 0.78f),
         )
 
         // ── Google button — the fastest path, so it leads ────────────
         Button(
             onClick = {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 errorMessage = ""
+                hintMessage = ""
                 isLoading = true
                 scope.launch {
                     onGoogleAuthenticate()
@@ -156,11 +183,28 @@ fun AuthScreen(
                         }
                         .onFailure { error ->
                             isLoading = false
-                            errorMessage = when (error) {
-                                is AuthConfigurationException -> error.message.orEmpty()
-                                else -> error.message
-                                    ?.takeIf(String::isNotBlank)
-                                    ?: "Google sign-in couldn't be completed. Try again."
+                            if (error !is GoogleOAuthPending && error !is GoogleSignInCancelled) {
+                                PostHogAnalytics.captureException(
+                                    error,
+                                    mapOf(
+                                        "flow" to "google_sign_in",
+                                        "error_type" to error::class.simpleName.orEmpty(),
+                                    ),
+                                )
+                            }
+                            when (error) {
+                                is GoogleOAuthPending -> {
+                                    hintMessage = error.message.orEmpty()
+                                    errorMessage = ""
+                                }
+                                is GoogleSignInCancelled -> errorMessage = ""
+                                is AuthConfigurationException ->
+                                    errorMessage = error.message.orEmpty()
+                                else -> {
+                                    errorMessage = error.message
+                                        ?.takeIf(String::isNotBlank)
+                                        ?: "Google sign-in couldn't be completed. Try again."
+                                }
                             }
                         }
                 }
@@ -170,7 +214,7 @@ fun AuthScreen(
                 .fillMaxWidth()
                 .height(AuthButtonHeight)
                 .testTag(PriceErrorsTestTags.GOOGLE_AUTH),
-            colors = ButtonDefaults.buttonColors(containerColor = AppDark, contentColor = Color.White),
+            colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White),
             shape = RoundedCornerShape(16.dp),
             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
         ) {
@@ -208,7 +252,7 @@ fun AuthScreen(
                 fontFamily = SpaceGrotesk,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.40f),
+                color = Color.White.copy(alpha = 0.72f),
             )
             DividerLine(modifier = Modifier.weight(1f))
         }
@@ -247,7 +291,7 @@ fun AuthScreen(
                 modifier = Modifier
                     .padding(top = 10.dp)
                     .semantics { liveRegion = LiveRegionMode.Assertive },
-                color = MaterialTheme.colorScheme.error,
+                color = Color(0xFFFFD0D6),
                 fontFamily = SpaceGrotesk,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 13.sp,
@@ -260,7 +304,7 @@ fun AuthScreen(
                 modifier = Modifier
                     .padding(top = 10.dp)
                     .semantics { liveRegion = LiveRegionMode.Polite },
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f),
+                color = Color.White.copy(alpha = 0.82f),
                 fontFamily = SpaceGrotesk,
                 fontWeight = FontWeight.Medium,
                 fontSize = 13.sp,
@@ -269,6 +313,7 @@ fun AuthScreen(
 
         Button(
             onClick = {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 hintMessage = ""
                 errorMessage = when {
                     mode == AuthMode.SIGN_UP && name.isBlank() -> "Enter your full name."
@@ -312,9 +357,18 @@ fun AuthScreen(
                                         is EmailAuthError.UseSocialSignIn,
                                         is EmailAuthError.EmailNotConfirmed,
                                         -> hintMessage = error.message.orEmpty()
-                                        else -> errorMessage = error.message
-                                            ?.takeIf(String::isNotBlank)
-                                            ?: "Sign in failed. Try again."
+                                        else -> {
+                                            PostHogAnalytics.captureException(
+                                                error,
+                                                mapOf(
+                                                    "flow" to "email_auth",
+                                                    "error_type" to error::class.simpleName.orEmpty(),
+                                                ),
+                                            )
+                                            errorMessage = error.message
+                                                ?.takeIf(String::isNotBlank)
+                                                ?: "Sign in failed. Try again."
+                                        }
                                     }
                                 }
                         }
@@ -333,12 +387,12 @@ fun AuthScreen(
                 .padding(top = 16.dp)
                 .height(AuthButtonHeight)
                 .testTag(PriceErrorsTestTags.AUTH_SUBMIT),
-            colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Color.White),
+            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = AppDark),
             shape = RoundedCornerShape(16.dp),
         ) {
             if (isLoading) {
                 CircularProgressIndicator(
-                    color = Color.White,
+                    color = AppDark,
                     modifier = Modifier.height(22.dp),
                     strokeWidth = 2.dp,
                 )
@@ -354,8 +408,10 @@ fun AuthScreen(
 
         TextButton(
             onClick = {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 mode = if (mode == AuthMode.SIGN_UP) AuthMode.SIGN_IN else AuthMode.SIGN_UP
                 errorMessage = ""
+                hintMessage = ""
             },
             modifier = Modifier
                 .fillMaxWidth()
@@ -363,7 +419,7 @@ fun AuthScreen(
         ) {
             Text(
                 if (mode == AuthMode.SIGN_UP) "Already have an account? Log in" else "Don't have an account? Sign up",
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f),
+                color = Color.White.copy(alpha = 0.82f),
                 fontFamily = SpaceGrotesk,
                 fontWeight = FontWeight.Medium,
                 fontSize = 14.sp,
@@ -378,7 +434,7 @@ private fun DividerLine(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .height(1.dp)
-            .background(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f)),
+            .background(Color.White.copy(alpha = 0.30f)),
     )
 }
 
@@ -404,7 +460,7 @@ private fun AuthField(
                 imageVector = leadingIcon,
                 contentDescription = null,
                 modifier = Modifier.size(22.dp),
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+                tint = AppDark.copy(alpha = 0.42f),
             )
         },
         singleLine = true,
@@ -413,10 +469,51 @@ private fun AuthField(
         textStyle = MaterialTheme.typography.bodyLarge,
         shape = RoundedCornerShape(14.dp),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = MaterialTheme.colorScheme.surface,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-            focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
-            unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f),
+            focusedTextColor = AppDark,
+            unfocusedTextColor = AppDark,
+            cursorColor = AppDark,
+            focusedContainerColor = Color.White,
+            unfocusedContainerColor = Color.White,
+            focusedBorderColor = AppDark.copy(alpha = 0.26f),
+            unfocusedBorderColor = AppDark.copy(alpha = 0.10f),
+            focusedPlaceholderColor = AppDark.copy(alpha = 0.48f),
+            unfocusedPlaceholderColor = AppDark.copy(alpha = 0.48f),
         ),
     )
+}
+
+private fun Modifier.authEdgeBackGesture(
+    onBack: (() -> Unit)?,
+    haptics: HapticFeedback,
+): Modifier {
+    if (onBack == null) return this
+    return pointerInput(onBack) {
+        var startedAtEdge = false
+        var horizontal = 0f
+        var vertical = 0f
+        val edge = 44.dp.toPx()
+        val threshold = 72.dp.toPx()
+        detectDragGestures(
+            onDragStart = {
+                startedAtEdge = it.x <= edge
+                horizontal = 0f
+                vertical = 0f
+            },
+            onDrag = { change, amount ->
+                horizontal += amount.x
+                vertical += amount.y
+                change.consume()
+            },
+            onDragEnd = {
+                if (
+                    startedAtEdge &&
+                    horizontal > threshold &&
+                    horizontal > kotlin.math.abs(vertical) * 1.2f
+                ) {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onBack()
+                }
+            },
+        )
+    }
 }

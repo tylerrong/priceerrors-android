@@ -6,6 +6,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -19,6 +20,25 @@ class SupabaseAuthClientTest {
 
     private lateinit var server: MockWebServer
     private lateinit var storage: InMemorySessionStorage
+
+    private class RecordingPkceStore(var verifier: String? = null) : GoogleOAuthPkceStore {
+        var wasCleared = false
+
+        override fun save(verifier: String, createdAt: Instant) {
+            this.verifier = verifier
+        }
+
+        override fun consume(now: Instant): String? =
+            verifier.also {
+                verifier = null
+                wasCleared = true
+            }
+
+        override fun clear() {
+            verifier = null
+            wasCleared = true
+        }
+    }
 
     private class InMemorySessionStorage(var session: SupabaseSession? = null) : SessionStorage {
         var cleared = false
@@ -47,12 +67,16 @@ class SupabaseAuthClientTest {
         server.close()
     }
 
-    private fun client(storage: SessionStorage = this.storage) = SupabaseAuthClient(
+    private fun client(
+        storage: SessionStorage = this.storage,
+        pkceStore: GoogleOAuthPkceStore = InMemoryGoogleOAuthPkceStore(),
+    ) = SupabaseAuthClient(
         httpClient = OkHttpClient(),
         sessionStore = storage,
         json = Json { ignoreUnknownKeys = true },
         supabaseUrl = server.url("/").toString().trimEnd('/'),
         anonKey = "anon-key",
+        googleOAuthPkceStore = pkceStore,
     )
 
     private fun tokenResponse(access: String, refresh: String, expiresIn: Long = 3600) =
@@ -69,7 +93,7 @@ class SupabaseAuthClientTest {
     fun `exchanges a google id token for a session`() = runTest {
         server.enqueue(tokenResponse("access-1", "refresh-1"))
 
-        val session = client().signInWithGoogle("google-id-token").getOrThrow()
+        val session = client().signInWithGoogle("google-id-token", nonce = "raw-nonce").getOrThrow()
 
         assertEquals("access-1", session.accessToken)
         assertEquals("user-123", session.userId)
@@ -79,7 +103,7 @@ class SupabaseAuthClientTest {
         assertEquals("id_token", recorded.url.queryParameter("grant_type"))
         assertEquals("anon-key", recorded.headers["apikey"])
         assertEquals(
-            """{"provider":"google","id_token":"google-id-token"}""",
+            """{"provider":"google","id_token":"google-id-token","nonce":"raw-nonce"}""",
             recorded.body?.utf8(),
         )
     }
@@ -93,6 +117,56 @@ class SupabaseAuthClientTest {
         assertEquals("access-1", storage.session?.accessToken)
         // A fresh client reading the same storage is already signed in.
         assertTrue(client().isSignedIn)
+    }
+
+    @Test
+    fun `starts google oauth with a PKCE challenge and mobile callback`() {
+        val pkceStore = RecordingPkceStore()
+
+        val authorizationUrl = client(pkceStore = pkceStore)
+            .beginGoogleOAuth()
+            .getOrThrow()
+            .toHttpUrl()
+
+        assertEquals("google", authorizationUrl.queryParameter("provider"))
+        assertEquals(
+            "priceerrors://auth/callback",
+            authorizationUrl.queryParameter("redirect_to"),
+        )
+        assertEquals("s256", authorizationUrl.queryParameter("code_challenge_method"))
+        assertTrue(authorizationUrl.queryParameter("code_challenge").orEmpty().isNotBlank())
+        assertTrue(pkceStore.verifier.orEmpty().isNotBlank())
+    }
+
+    @Test
+    fun `exchanges google oauth callback and persists session`() = runTest {
+        val pkceStore = RecordingPkceStore("saved-verifier")
+        server.enqueue(tokenResponse("browser-access", "browser-refresh"))
+
+        val identity = client(pkceStore = pkceStore)
+            .completeGoogleOAuth("priceerrors://auth/callback?code=one-time%2Bcode")
+            .getOrThrow()
+
+        assertEquals("tester", identity.displayName)
+        assertEquals("tester@example.com", identity.email)
+        assertEquals("browser-access", storage.session?.accessToken)
+        assertTrue(pkceStore.wasCleared)
+        val recorded = server.takeRequest()
+        assertEquals("pkce", recorded.url.queryParameter("grant_type"))
+        assertEquals(
+            """{"auth_code":"one-time+code","code_verifier":"saved-verifier"}""",
+            recorded.body?.utf8(),
+        )
+    }
+
+    @Test
+    fun `rejects google oauth callback without a pending verifier`() = runTest {
+        val error = client(pkceStore = RecordingPkceStore())
+            .completeGoogleOAuth("priceerrors://auth/callback?code=one-time-code")
+            .exceptionOrNull()
+
+        assertTrue(error?.message.orEmpty().contains("expired"))
+        assertEquals(0, server.requestCount)
     }
 
     @Test

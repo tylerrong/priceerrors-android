@@ -3,6 +3,12 @@ package app.priceerrors.core.auth
 import app.priceerrors.core.network.ApiConfig
 import app.priceerrors.core.network.ApiError
 import java.io.IOException
+import java.net.URI
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import java.security.SecureRandom
+import java.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -12,6 +18,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -30,6 +37,7 @@ class SupabaseAuthClient(
     private val json: Json,
     private val supabaseUrl: String = ApiConfig.supabaseUrl,
     private val anonKey: String = ApiConfig.supabaseAnonKey,
+    private val googleOAuthPkceStore: GoogleOAuthPkceStore = InMemoryGoogleOAuthPkceStore(),
 ) : AccessTokenProvider {
     private val _session = MutableStateFlow(sessionStore.load())
 
@@ -45,19 +53,112 @@ class SupabaseAuthClient(
     /**
      * Trades the Google ID token from [GoogleCredentialAuthClient] for a
      * Supabase session and persists it.
+     *
+     * [nonce] must be the raw (unhashed) value whose SHA-256 hex digest was
+     * passed to Credential Manager — matching Supabase's native Google flow.
      */
-    suspend fun signInWithGoogle(googleIdToken: String): Result<SupabaseSession> =
+    suspend fun signInWithGoogle(
+        googleIdToken: String,
+        nonce: String? = null,
+    ): Result<SupabaseSession> =
         requestToken(
             query = "grant_type=id_token",
             body = buildString {
                 append("{\"provider\":\"google\",\"id_token\":")
                 append(json.encodeToString(googleIdToken))
+                if (!nonce.isNullOrBlank()) {
+                    append(",\"nonce\":")
+                    append(json.encodeToString(nonce))
+                }
                 append("}")
             },
         ).onSuccess { session ->
             sessionStore.save(session)
             _session.value = session
         }
+
+    /**
+     * Starts a browser-based Google OAuth flow through Supabase. This is a
+     * standards-based fallback for Play installs whose otherwise-correct native
+     * OAuth registration is rejected by Google Play services.
+     */
+    fun beginGoogleOAuth(): Result<String> = runCatching {
+        if (supabaseUrl.isBlank() || anonKey.isBlank()) {
+            throw ApiError.NotConfigured
+        }
+
+        val verifierBytes = ByteArray(32).also(SecureRandom()::nextBytes)
+        val verifier = Base64.getUrlEncoder().withoutPadding().encodeToString(verifierBytes)
+        val challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(
+            MessageDigest.getInstance("SHA-256")
+                .digest(verifier.toByteArray(StandardCharsets.US_ASCII)),
+        )
+        googleOAuthPkceStore.save(verifier)
+
+        "$supabaseUrl/auth/v1/authorize".toHttpUrl()
+            .newBuilder()
+            .addQueryParameter("provider", "google")
+            .addQueryParameter("redirect_to", GOOGLE_OAUTH_REDIRECT_URI)
+            .addQueryParameter("code_challenge", challenge)
+            .addQueryParameter("code_challenge_method", "s256")
+            .build()
+            .toString()
+    }.onFailure {
+        googleOAuthPkceStore.clear()
+    }
+
+    /**
+     * Exchanges the one-time authorization code returned to the app for the
+     * same persisted Supabase session used by native and email sign-in.
+     */
+    suspend fun completeGoogleOAuth(callbackUrl: String): Result<AuthIdentity> = runCatching {
+        val callback = URI(callbackUrl)
+        if (
+            !callback.scheme.equals("priceerrors", ignoreCase = true) ||
+            !callback.host.equals("auth", ignoreCase = true) ||
+            callback.path != "/callback"
+        ) {
+            throw IllegalArgumentException("Google returned an invalid callback.")
+        }
+
+        val parameters = callback.rawQuery.orEmpty()
+            .split('&')
+            .filter(String::isNotBlank)
+            .associate { pair ->
+                val pieces = pair.split('=', limit = 2)
+                decodeUrlComponent(pieces[0]) to decodeUrlComponent(pieces.getOrElse(1) { "" })
+            }
+        parameters["error"]?.takeIf(String::isNotBlank)?.let { error ->
+            googleOAuthPkceStore.clear()
+            val description = parameters["error_description"]?.takeIf(String::isNotBlank)
+            throw IllegalStateException(description ?: "Google sign-in failed: $error")
+        }
+
+        val authorizationCode = parameters["code"]?.takeIf(String::isNotBlank)
+            ?: throw IllegalStateException("Google did not return an authorization code.")
+        val verifier = googleOAuthPkceStore.consume()
+            ?: throw IllegalStateException("Google sign-in expired. Please try again.")
+
+        val session = requestToken(
+            query = "grant_type=pkce",
+            body = buildString {
+                append("{\"auth_code\":").append(json.encodeToString(authorizationCode))
+                append(",\"code_verifier\":").append(json.encodeToString(verifier))
+                append("}")
+            },
+        ).getOrThrow()
+        adopt(session)
+
+        val resolvedEmail = session.email.orEmpty()
+        AuthIdentity(
+            displayName = resolvedEmail.substringBefore('@').takeIf(String::isNotBlank) ?: "User",
+            email = resolvedEmail,
+            idToken = session.accessToken,
+            profilePhotoUrl = null,
+        )
+    }.onFailure {
+        googleOAuthPkceStore.clear()
+    }
 
     /**
      * Signs in with an email and password against the same Supabase project the
@@ -296,5 +397,9 @@ class SupabaseAuthClient(
 
     private companion object {
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+        const val GOOGLE_OAUTH_REDIRECT_URI = "priceerrors://auth/callback"
+
+        fun decodeUrlComponent(value: String): String =
+            URLDecoder.decode(value, StandardCharsets.UTF_8.name())
     }
 }

@@ -7,15 +7,18 @@ import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.NoCredentialException
 import app.priceerrors.BuildConfig
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import java.security.MessageDigest
+import java.util.UUID
 
 data class AuthIdentity(
     val displayName: String,
     val email: String,
     val idToken: String,
     val profilePhotoUrl: String?,
+    /** Raw nonce sent to Supabase; Google receives the SHA-256 hex digest. */
+    val nonce: String? = null,
 )
 
 class AuthConfigurationException(message: String) : IllegalStateException(message)
@@ -37,49 +40,34 @@ class GoogleCredentialAuthClient {
         }
 
         val credentialManager = CredentialManager.create(activity)
+        val rawNonce = UUID.randomUUID().toString()
+        val hashedNonce = sha256Hex(rawNonce)
 
-        // Two different APIs, and the distinction matters. GetGoogleIdOption is
-        // the One Tap path: it resolves an account without a picker, which is
-        // the nicest experience for someone returning — but it raises
-        // NoCredentialException whenever it cannot do that silently, even with
-        // filtering off. Behind an explicit "Sign in with Google" button that
-        // reads as a dead end.
-        //
-        // GetSignInWithGoogleOption is the button's API: it always opens the
-        // account picker. Try the smooth path, fall back to the explicit one.
+        // GetSignInWithGoogleOption is the API behind an explicit "Sign in with
+        // Google" button: it always opens the account picker. GetGoogleIdOption
+        // is One Tap, which can fail with "[16] Account reauth failed" against a
+        // cached account and is the wrong control for this button.
         val response = try {
             credentialManager.getCredential(
                 context = activity,
                 request = GetCredentialRequest.Builder()
                     .addCredentialOption(
-                        GetGoogleIdOption.Builder()
-                            .setFilterByAuthorizedAccounts(false)
-                            .setAutoSelectEnabled(false)
-                            .setServerClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID)
+                        GetSignInWithGoogleOption
+                            .Builder(BuildConfig.GOOGLE_WEB_CLIENT_ID.trim())
+                            .setNonce(hashedNonce)
                             .build(),
                     )
                     .build(),
             )
-        } catch (oneTapUnavailable: NoCredentialException) {
-            try {
-                credentialManager.getCredential(
-                    context = activity,
-                    request = GetCredentialRequest.Builder()
-                        .addCredentialOption(
-                            GetSignInWithGoogleOption
-                                .Builder(BuildConfig.GOOGLE_WEB_CLIENT_ID)
-                                .build(),
-                        )
-                        .build(),
-                )
-            } catch (noAccount: NoCredentialException) {
-                // Both paths declined: there really is no usable Google account.
+        } catch (error: Throwable) {
+            if (error is NoCredentialException) {
                 throw IllegalStateException(
                     "No Google account is available on this device. Add one in " +
                         "Settings, or sign up with an email address instead.",
-                    noAccount,
+                    error,
                 )
             }
+            throw remapGoogleSignInError(error)
         }
         val credential = response.credential
         if (
@@ -98,12 +86,21 @@ class GoogleCredentialAuthClient {
             email = googleCredential.id,
             idToken = googleCredential.idToken,
             profilePhotoUrl = googleCredential.profilePictureUri?.toString(),
+            nonce = rawNonce,
         )
-    }
+    }.fold(
+        onSuccess = { Result.success(it) },
+        onFailure = { Result.failure(remapGoogleSignInError(it)) },
+    )
 
     suspend fun clear(activity: Activity) {
         runCatching {
             CredentialManager.create(activity).clearCredentialState(ClearCredentialStateRequest())
         }
+    }
+
+    private fun sha256Hex(value: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+        return digest.joinToString("") { byte -> "%02x".format(byte) }
     }
 }

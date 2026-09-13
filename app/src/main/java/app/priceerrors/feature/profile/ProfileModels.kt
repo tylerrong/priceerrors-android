@@ -7,7 +7,7 @@ import app.priceerrors.ui.theme.Yellow
 
 enum class ProfileTab {
     FEED,
-    COMMUNITY,
+    ALERTS,
     BROWSE,
     PROFILE,
 }
@@ -25,9 +25,9 @@ enum class ProfilePalette(
 }
 
 enum class ProfileFeedLayout(val label: String) {
+    SCROLL("Scroll"),
     SWIPE("Swipe"),
     LIST("List"),
-    GRID("Grid"),
 }
 
 enum class ProfileAppearance(val label: String) {

@@ -6,6 +6,6 @@ package app.priceerrors.core.network
  * change rather than a grep across screens.
  */
 object AppLinks {
-    /** Community Discord — linked from the banner on the Community page. */
+    /** Discord invite — linked from Profile. */
     const val DISCORD = "https://discord.gg/ugKbqEG6hG"
 }

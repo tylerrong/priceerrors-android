@@ -1,7 +1,11 @@
 package app.priceerrors
 
 import android.content.Context
+import app.priceerrors.core.analytics.GrowthAnalytics
+import app.priceerrors.core.analytics.MetaMeasurement
+import app.priceerrors.core.analytics.PostHogAnalytics
 import app.priceerrors.core.auth.GoogleCredentialAuthClient
+import app.priceerrors.core.auth.SharedPreferencesGoogleOAuthPkceStore
 import app.priceerrors.core.auth.SupabaseAuthClient
 import app.priceerrors.core.auth.SupabaseSessionStore
 import app.priceerrors.core.billing.BillingManager
@@ -26,6 +30,7 @@ interface AppContainer {
     val billingManager: BillingManager
     val navigationIntentStore: NavigationIntentStore
     val notificationCoordinator: NotificationCoordinator
+    val growthAnalytics: GrowthAnalytics
 }
 
 class DefaultAppContainer(context: Context) : AppContainer {
@@ -46,6 +51,7 @@ class DefaultAppContainer(context: Context) : AppContainer {
         httpClient = httpClient,
         sessionStore = SupabaseSessionStore(context),
         json = json,
+        googleOAuthPkceStore = SharedPreferencesGoogleOAuthPkceStore(context),
     )
 
     private val api = PriceErrorsApi(
@@ -62,10 +68,24 @@ class DefaultAppContainer(context: Context) : AppContainer {
      * that has them always talks to the real server.
      */
     override val dealRepository: DealRepository =
-        if (ApiConfig.isConfigured) NetworkDealRepository(api) else FakeDealRepository()
+        if (ApiConfig.isConfigured) {
+            NetworkDealRepository(
+                api = api,
+                cacheRoot = context.applicationContext.cacheDir.resolve("deal_feeds"),
+                userIdProvider = { supabaseAuthClient.session.value?.userId },
+            )
+        } else {
+            FakeDealRepository()
+        }
 
     override val googleAuthClient = GoogleCredentialAuthClient()
     override val billingManager = BillingManager(context)
     override val navigationIntentStore = NavigationIntentStore()
     override val notificationCoordinator = NotificationCoordinator(context)
+    override val growthAnalytics = GrowthAnalytics(
+        httpClient = httpClient,
+        tokenProvider = supabaseAuthClient,
+        userIdProvider = { supabaseAuthClient.session.value?.userId },
+        json = json,
+    )
 }

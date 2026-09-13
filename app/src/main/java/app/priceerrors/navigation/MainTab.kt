@@ -2,7 +2,7 @@ package app.priceerrors.navigation
 
 enum class MainTab {
     FEED,
-    COMMUNITY,
+    ALERTS,
     BROWSE,
     PROFILE,
 }

@@ -36,7 +36,17 @@ class FakeDealRepository(
 
     override fun observeMetadata(): Flow<DealFeedMetadata?> = metadata
 
-    override suspend fun refresh(query: DealFeedQuery): Result<Unit> = refreshResult
+    override suspend fun refresh(query: DealFeedQuery, forceFull: Boolean): Result<Unit> = refreshResult
+
+    override suspend fun fetchDeal(id: String): Result<Deal> =
+        deals.value.firstOrNull { it.id == id }?.let { Result.success(it) }
+            ?: Result.failure(NoSuchElementException("Deal not found"))
+
+    override fun upsertDeal(deal: Deal) {
+        if (deals.value.none { it.id == deal.id }) {
+            deals.value = listOf(deal) + deals.value
+        }
+    }
 
     fun replaceDeals(updatedDeals: List<Deal>) {
         deals.value = updatedDeals

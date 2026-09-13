@@ -43,7 +43,14 @@ check(!hasAnyReleaseSigningValue || hasCompleteReleaseSigning) {
 // anyway, which is what the R8/lint validation pass in the README wants.
 val producesReleaseArtifact = gradle.startParameter.taskNames.any { requested ->
     when (requested.substringAfterLast(':')) {
-        "assembleRelease", "bundleRelease", "assemble", "bundle", "build" -> true
+        "assembleRelease",
+        "bundleRelease",
+        "assembleClosedTest",
+        "bundleClosedTest",
+        "assemble",
+        "bundle",
+        "build",
+        -> true
         else -> false
     }
 }
@@ -159,6 +166,11 @@ android {
         )
         buildConfigField(
             "String",
+            "BILLING_RESCUE_PRODUCT_ID",
+            buildConfigString(buildSetting("PRICEERRORS_BILLING_RESCUE_PRODUCT_ID", "priceerrors_pro_monthly_rescue")),
+        )
+        buildConfigField(
+            "String",
             "FIREBASE_APPLICATION_ID",
             buildConfigString(buildSetting("PRICEERRORS_FIREBASE_APPLICATION_ID")),
         )
@@ -177,6 +189,32 @@ android {
             "FIREBASE_SENDER_ID",
             buildConfigString(buildSetting("PRICEERRORS_FIREBASE_SENDER_ID")),
         )
+        buildConfigField(
+            "String",
+            "FACEBOOK_APP_ID",
+            buildConfigString(buildSetting("PRICEERRORS_FACEBOOK_APP_ID")),
+        )
+        buildConfigField(
+            "String",
+            "FACEBOOK_CLIENT_TOKEN",
+            buildConfigString(buildSetting("PRICEERRORS_FACEBOOK_CLIENT_TOKEN")),
+        )
+        buildConfigField(
+            "String",
+            "POSTHOG_API_KEY",
+            buildConfigString(buildSetting("PRICEERRORS_POSTHOG_API_KEY")),
+        )
+        buildConfigField(
+            "String",
+            "POSTHOG_HOST",
+            buildConfigString(
+                buildSetting("PRICEERRORS_POSTHOG_HOST", "https://us.i.posthog.com"),
+            ),
+        )
+        // The dedicated closed-test artifact grants temporary full access while
+        // Play Console monetization is unavailable. Normal release builds keep
+        // this false so the production paywall cannot be disabled accidentally.
+        buildConfigField("boolean", "CLOSED_TEST_FREE_ACCESS", "false")
     }
 
     signingConfigs {
@@ -203,6 +241,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+        }
+        create("closedTest") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
+            buildConfigField("boolean", "CLOSED_TEST_FREE_ACCESS", "true")
         }
     }
 
@@ -242,6 +285,11 @@ dependencies {
     implementation(libs.firebase.messaging)
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.facebook.core)
+    implementation(libs.posthog.android)
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
+    implementation(libs.play.review.ktx)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

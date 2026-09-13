@@ -34,12 +34,16 @@ enum class AppearanceOption(val key: String, val displayName: String) {
 }
 
 enum class FeedLayoutOption(val key: String, val displayName: String) {
+    SCROLL("scroll", "Scroll"),
     SWIPE("swipe", "Swipe"),
     LIST("list", "List"),
-    GRID("grid", "Grid"),
     ;
 
     companion object {
-        fun fromKey(key: String?): FeedLayoutOption = entries.firstOrNull { it.key == key } ?: SWIPE
+        fun fromKey(key: String?): FeedLayoutOption = when (key) {
+            // Legacy installs stored "grid"; map to the vertical scroll layout.
+            "grid" -> SCROLL
+            else -> entries.firstOrNull { it.key == key } ?: SCROLL
+        }
     }
 }

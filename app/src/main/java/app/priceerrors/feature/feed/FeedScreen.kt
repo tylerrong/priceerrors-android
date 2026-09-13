@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -38,6 +39,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.foundation.pager.VerticalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -46,6 +50,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -58,6 +64,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
@@ -81,6 +88,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import app.priceerrors.core.model.Deal
 import app.priceerrors.ui.components.DealArtwork
+import app.priceerrors.ui.components.DealCardPriceGroup
 import app.priceerrors.ui.components.DealPill
 import app.priceerrors.ui.components.LiveTicker
 import app.priceerrors.ui.components.PriceErrorsLogo
@@ -88,70 +96,109 @@ import app.priceerrors.ui.components.dealVisuals
 import app.priceerrors.ui.components.dealAccessibilityLabel
 import app.priceerrors.ui.components.formatPrice
 import app.priceerrors.ui.components.relativeDealTime
+import app.priceerrors.ui.components.DealShareClickable
 import app.priceerrors.ui.theme.AppDark
 import app.priceerrors.ui.theme.FeedLayoutOption
 import app.priceerrors.ui.theme.SpaceGrotesk
 import app.priceerrors.ui.accessibility.PriceErrorsTestTags
 import app.priceerrors.ui.accessibility.rememberAnimationsEnabled
+import java.time.Duration
+import java.time.Instant
+import kotlinx.coroutines.delay
 
 /**
  * The feed owns its content only. The floating application navigation is drawn by the app root so
- * it remains in exactly the same position while switching between Feed, Community, Browse and You.
+ * it remains in exactly the same position while switching between Feed, Alerts, Browse and You.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeedScreen(
     uiState: FeedUiState,
     onDealSelected: (String) -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
-    layout: FeedLayoutOption = FeedLayoutOption.SWIPE,
+    layout: FeedLayoutOption = FeedLayoutOption.SCROLL,
+    isLocked: Boolean = false,
+    onUpgrade: () -> Unit = {},
+    onShareDeal: (Deal) -> Unit = {},
+    onCopyDealLink: (Deal) -> Unit = {},
+    lastRefreshed: Instant? = null,
+    showScrollHint: Boolean = true,
+    onScrollHintDismissed: () -> Unit = {},
 ) {
+    val openDeal: (String) -> Unit = { id ->
+        if (isLocked) onUpgrade() else onDealSelected(id)
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .testTag(PriceErrorsTestTags.FEED_SCREEN),
     ) {
-        when {
-            uiState.isLoading && uiState.deals.isEmpty() -> FeedLoading()
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(if (isLocked) Modifier.blur(13.dp) else Modifier),
+        ) {
+            when {
+                uiState.isLoading && uiState.deals.isEmpty() -> FeedLoading()
 
-            uiState.deals.isEmpty() -> EmptyFeed(
-                isError = uiState.errorMessage != null,
-                onRetry = onRetry,
-            )
+                uiState.deals.isEmpty() -> EmptyFeed(
+                    isError = uiState.errorMessage != null,
+                    onRetry = onRetry,
+                )
 
-            layout == FeedLayoutOption.SWIPE -> SwipeFeed(
-                deals = uiState.deals,
-                isRefreshing = uiState.isRefreshing,
-                errorMessage = uiState.errorMessage,
-                onDealSelected = onDealSelected,
-                onRefresh = onRetry,
-            )
+                layout == FeedLayoutOption.SWIPE -> SwipeFeed(
+                    deals = uiState.deals,
+                    totalDealCount = uiState.totalDealCount,
+                    isRefreshing = uiState.isRefreshing,
+                    errorMessage = uiState.errorMessage,
+                    onDealSelected = openDeal,
+                    onShareDeal = onShareDeal,
+                    onCopyDealLink = onCopyDealLink,
+                    onRefresh = onRetry,
+                )
 
-            layout == FeedLayoutOption.LIST -> ListFeed(
-                deals = uiState.deals,
-                isRefreshing = uiState.isRefreshing,
-                errorMessage = uiState.errorMessage,
-                onDealSelected = onDealSelected,
-                onRefresh = onRetry,
-            )
+                layout == FeedLayoutOption.LIST -> ListFeed(
+                    deals = uiState.deals,
+                    isRefreshing = uiState.isRefreshing,
+                    errorMessage = uiState.errorMessage,
+                    onDealSelected = openDeal,
+                    onShareDeal = onShareDeal,
+                    onCopyDealLink = onCopyDealLink,
+                    onRefresh = onRetry,
+                    lastRefreshed = lastRefreshed,
+                )
 
-            else -> GridFeed(
-                deals = uiState.deals,
-                errorMessage = uiState.errorMessage,
-                onDealSelected = onDealSelected,
-                onRefresh = onRetry,
-            )
+                else -> ScrollFeed(
+                    deals = uiState.deals,
+                    totalDealCount = uiState.totalDealCount,
+                    isRefreshing = uiState.isRefreshing,
+                    errorMessage = uiState.errorMessage,
+                    onDealSelected = openDeal,
+                    onShareDeal = onShareDeal,
+                    onCopyDealLink = onCopyDealLink,
+                    onRefresh = onRetry,
+                    showScrollHint = showScrollHint,
+                    onScrollHintDismissed = onScrollHintDismissed,
+                )
+            }
         }
+
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SwipeFeed(
     deals: List<Deal>,
+    totalDealCount: Int,
     isRefreshing: Boolean,
     errorMessage: String?,
     onDealSelected: (String) -> Unit,
+    onShareDeal: (Deal) -> Unit,
+    onCopyDealLink: (Deal) -> Unit,
     onRefresh: () -> Unit,
 ) {
     var currentIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -201,12 +248,12 @@ private fun SwipeFeed(
     ) {
         FeedHeader(
             isRefreshing = isRefreshing,
-            showRefresh = true,
+            showRefresh = false,
             onRefresh = onRefresh,
         )
 
         Text(
-            text = "${safeIndex + 1} / ${deals.size} · SWIPE FOR NEXT",
+            text = "${safeIndex + 1} / ${maxOf(totalDealCount, deals.size)} · SWIPE FOR NEXT",
             modifier = Modifier
                 .align(Alignment.CenterHorizontally)
                 .padding(top = 8.dp),
@@ -220,16 +267,23 @@ private fun SwipeFeed(
             InlineError(onRetry = onRefresh)
         }
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .padding(top = 10.dp, bottom = 140.dp),
-            contentAlignment = Alignment.Center,
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = onRefresh,
+            modifier = Modifier.weight(1f),
         ) {
-            SwipeDealCard(
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxSize()
+                    .padding(top = 10.dp, bottom = 140.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+            DealShareClickable(
                 deal = currentDeal,
                 onClick = { onDealSelected(currentDeal.id) },
+                onShare = onShareDeal,
+                onCopyLink = onCopyDealLink,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 14.dp)
@@ -252,7 +306,9 @@ private fun SwipeFeed(
                             dragTargetX = 0f
                         },
                     ),
-            )
+            ) {
+                SwipeDealCard(deal = currentDeal, modifier = Modifier.fillMaxSize())
+            }
 
             Row(
                 modifier = Modifier
@@ -271,6 +327,141 @@ private fun SwipeFeed(
                     enabled = safeIndex < deals.lastIndex,
                     onClick = { moveTo(safeIndex + 1) },
                 )
+            }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ScrollFeed(
+    deals: List<Deal>,
+    totalDealCount: Int,
+    isRefreshing: Boolean,
+    errorMessage: String?,
+    onDealSelected: (String) -> Unit,
+    onShareDeal: (Deal) -> Unit,
+    onCopyDealLink: (Deal) -> Unit,
+    onRefresh: () -> Unit,
+    showScrollHint: Boolean,
+    onScrollHintDismissed: () -> Unit,
+) {
+    if (deals.isEmpty()) return
+
+    val pagerState = rememberPagerState(
+        initialPage = 0,
+        pageCount = { deals.size },
+    )
+    var isScrollHintVisible by rememberSaveable(showScrollHint) {
+        mutableStateOf(showScrollHint)
+    }
+    val animationsEnabled = rememberAnimationsEnabled()
+    val hintTransition = rememberInfiniteTransition(label = "scrollHint")
+    val hintOffset by hintTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = if (animationsEnabled && isScrollHintVisible) -4f else 3f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(750),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "scrollHintOffset",
+    )
+
+    LaunchedEffect(deals.size) {
+        if (pagerState.currentPage > deals.lastIndex) {
+            pagerState.scrollToPage(deals.lastIndex.coerceAtLeast(0))
+        }
+    }
+
+    LaunchedEffect(pagerState.currentPage) {
+        if (pagerState.currentPage > 0 && isScrollHintVisible) {
+            isScrollHintVisible = false
+            onScrollHintDismissed()
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding(),
+    ) {
+        FeedHeader(
+            isRefreshing = isRefreshing,
+            showRefresh = false,
+            onRefresh = onRefresh,
+        )
+
+        Text(
+            text = "${pagerState.currentPage + 1} / ${maxOf(totalDealCount, deals.size)} · SWIPE UP FOR NEXT",
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .padding(top = 8.dp, bottom = 10.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.40f),
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.5.sp,
+        )
+
+        if (errorMessage != null) {
+            InlineError(onRetry = onRefresh)
+        }
+
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = onRefresh,
+            modifier = Modifier.weight(1f),
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                VerticalPager(
+                    state = pagerState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(bottom = 140.dp),
+                ) { page ->
+                    DealShareClickable(
+                        deal = deals[page],
+                        onClick = { onDealSelected(deals[page].id) },
+                        onShare = onShareDeal,
+                        onCopyLink = onCopyDealLink,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 14.dp),
+                    ) {
+                        SwipeDealCard(deal = deals[page], modifier = Modifier.fillMaxSize())
+                    }
+                }
+
+                if (isScrollHintVisible) {
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(horizontal = 14.dp, vertical = 162.dp)
+                            .offset(y = hintOffset.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.KeyboardArrowUp,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp),
+                        )
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                            shape = CircleShape,
+                            shadowElevation = 12.dp,
+                        ) {
+                            Text(
+                                text = "Swipe up for next",
+                                modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+                                fontFamily = SpaceGrotesk,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -328,7 +519,6 @@ private fun FeedHeader(
 @Composable
 private fun SwipeDealCard(
     deal: Deal,
-    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
@@ -349,31 +539,15 @@ private fun SwipeDealCard(
                 contentDescription = dealAccessibilityLabel(deal)
             }
             .testTag("${PriceErrorsTestTags.FEED_DEAL}_${deal.id}")
-            .background(visuals.background)
-            .clickable(onClick = onClick),
+            .background(visuals.background),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, top = 14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            DealPill(
-                text = deal.tag,
-                dark = true,
-                darkTextColor = MaterialTheme.colorScheme.tertiary,
-            )
-            DealPill(text = "⏰ ${relativeDealTime(deal.postedAt)}")
-        }
-
         DealArtwork(
             deal = deal,
             portrait = true,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 6.dp)
+                .padding(14.dp)
                 .clip(RoundedCornerShape(20.dp)),
             contentScale = ContentScale.Fit,
         )
@@ -385,95 +559,126 @@ private fun SwipeDealCard(
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             shadowElevation = 6.dp,
         ) {
-            Row(
-                modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp),
             ) {
-                Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = deal.title,
+                    fontFamily = SpaceGrotesk,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    lineHeight = 24.sp,
+                    letterSpacing = (-0.6).sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                DealCardPriceGroup(
+                    deal = deal,
+                    priceSize = 28,
+                )
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    Spacer(modifier = Modifier.weight(1f))
                     Text(
-                        text = deal.brand.uppercase(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = visuals.accent,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.5.sp,
-                    )
-                    Text(
-                        text = deal.title,
-                        modifier = Modifier.padding(top = 2.dp),
+                        text = relativeDealTime(deal.postedAt),
                         fontFamily = SpaceGrotesk,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        lineHeight = 22.sp,
-                        letterSpacing = (-0.5).sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    PriceWithOriginal(
-                        deal = deal,
-                        priceSize = 26,
-                        modifier = Modifier.padding(top = 3.dp),
                     )
                 }
-                Spacer(modifier = Modifier.width(12.dp))
-                DiscountBadge(discount = deal.discountPercent)
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ListFeed(
     deals: List<Deal>,
     isRefreshing: Boolean,
     errorMessage: String?,
     onDealSelected: (String) -> Unit,
+    onShareDeal: (Deal) -> Unit,
+    onCopyDealLink: (Deal) -> Unit,
     onRefresh: () -> Unit,
+    lastRefreshed: Instant?,
 ) {
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-        contentPadding = PaddingValues(bottom = 140.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        item {
-            FeedHeader(
-                isRefreshing = isRefreshing,
-                showRefresh = false,
-                onRefresh = onRefresh,
-            )
+    var timestampNow by remember(lastRefreshed) { mutableStateOf(Instant.now()) }
+    LaunchedEffect(lastRefreshed) {
+        while (lastRefreshed != null) {
+            delay(30_000)
+            timestampNow = Instant.now()
         }
-        item {
-            Column(
-                modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 2.dp, bottom = 2.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                FeedTitle()
-                Text(
-                    text = "${deals.size} live · ${if (isRefreshing) "refreshing…" else "refreshed just now"}",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.50f),
+    }
+
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = onRefresh,
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding(),
+            contentPadding = PaddingValues(bottom = 140.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            item {
+                FeedHeader(
+                    isRefreshing = isRefreshing,
+                    showRefresh = false,
+                    onRefresh = onRefresh,
                 )
             }
+            item {
+                Column(
+                    modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 2.dp, bottom = 2.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    FeedTitle()
+                    Text(
+                        text = "${deals.size} live · ${
+                            if (isRefreshing) "refreshing…" else refreshedAgo(lastRefreshed, timestampNow)
+                        }",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.50f),
+                    )
+                }
+            }
+            if (errorMessage != null) {
+                item { InlineError(onRetry = onRefresh) }
+            }
+            items(items = deals, key = { it.id }) { deal ->
+                DealShareClickable(
+                    deal = deal,
+                    onClick = { onDealSelected(deal.id) },
+                    onShare = onShareDeal,
+                    onCopyLink = onCopyDealLink,
+                    modifier = Modifier.padding(horizontal = 14.dp),
+                ) {
+                    ListDealRow(deal = deal)
+                }
+            }
         }
-        if (errorMessage != null) {
-            item { InlineError(onRetry = onRefresh) }
-        }
-        items(items = deals, key = { it.id }) { deal ->
-            ListDealRow(
-                deal = deal,
-                onClick = { onDealSelected(deal.id) },
-                modifier = Modifier.padding(horizontal = 14.dp),
-            )
-        }
+    }
+}
+
+internal fun refreshedAgo(lastRefreshed: Instant?, now: Instant = Instant.now()): String {
+    if (lastRefreshed == null) return "loading…"
+    val seconds = Duration.between(lastRefreshed, now).seconds.coerceAtLeast(0)
+    return when {
+        seconds < 60 -> "refreshed just now"
+        seconds < 3_600 -> "refreshed ${seconds / 60}m ago"
+        else -> "refreshed ${seconds / 3_600}h ago"
     }
 }
 
 @Composable
 private fun ListDealRow(
     deal: Deal,
-    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -484,7 +689,6 @@ private fun ListDealRow(
                 contentDescription = dealAccessibilityLabel(deal)
             }
             .testTag("${PriceErrorsTestTags.FEED_DEAL}_${deal.id}"),
-        onClick = onClick,
         color = MaterialTheme.colorScheme.surface,
         contentColor = MaterialTheme.colorScheme.onSurface,
         shape = RoundedCornerShape(22.dp),
@@ -498,29 +702,15 @@ private fun ListDealRow(
                 deal = deal,
                 portrait = false,
                 modifier = Modifier
-                    .size(76.dp)
+                    .size(88.dp)
                     .clip(RoundedCornerShape(18.dp)),
-                contentScale = ContentScale.Crop,
+                contentScale = ContentScale.Fit,
             )
 
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SmallDealPill(text = deal.tag)
-                    Spacer(modifier = Modifier.width(5.dp))
-                    AnimatedHeat(text = deal.heat.take(4))
-                    Spacer(modifier = Modifier.weight(1f))
-                    Text(
-                        text = "⏰ ${relativeDealTime(deal.postedAt)}",
-                        fontFamily = SpaceGrotesk,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
-                        maxLines = 1,
-                    )
-                }
                 Text(
                     text = deal.title,
                     fontFamily = SpaceGrotesk,
@@ -528,38 +718,21 @@ private fun ListDealRow(
                     lineHeight = 18.sp,
                     letterSpacing = (-0.3).sp,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                DealCardPriceGroup(
+                    deal = deal,
+                    priceSize = 19,
+                    compact = true,
+                )
                 Text(
-                    text = deal.brand.uppercase(),
+                    text = relativeDealTime(deal.postedAt),
                     fontFamily = SpaceGrotesk,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.5.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.50f),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                     maxLines = 1,
-                )
-            }
-
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Text(
-                    text = formatPrice(deal.priceInCents, deal.currencyCode),
-                    fontFamily = SpaceGrotesk,
-                    fontSize = 20.sp,
-                    letterSpacing = (-0.5).sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                )
-                Text(
-                    text = "-${deal.discountPercent}%",
-                    fontFamily = SpaceGrotesk,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
                 )
             }
         }

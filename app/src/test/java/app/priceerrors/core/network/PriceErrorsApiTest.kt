@@ -44,12 +44,14 @@ class PriceErrorsApiTest {
 
     private fun api(
         provider: AccessTokenProvider = FakeTokenProvider(mutableListOf("token-1")),
+        closedTestAccess: Boolean = false,
     ) = PriceErrorsApi(
         httpClient = OkHttpClient(),
         tokenProvider = provider,
         json = json,
         baseUrl = server.url("/").toString().trimEnd('/'),
         apiKey = "test-api-key",
+        closedTestAccess = closedTestAccess,
     )
 
     @Test
@@ -66,6 +68,79 @@ class PriceErrorsApiTest {
         val recorded = server.takeRequest()
         assertEquals("test-api-key", recorded.headers["X-API-Key"])
         assertEquals("Bearer token-1", recorded.headers["Authorization"])
+        assertEquals(null, recorded.headers["X-PriceErrors-Closed-Test"])
+    }
+
+    @Test
+    fun `closed test requests identify the Android beta build`() = runTest {
+        server.enqueue(
+            MockResponse(
+                code = 200,
+                body = """{"data":[],"total":0,"page":1,"limit":100,"isPro":true}""",
+            ),
+        )
+
+        api(closedTestAccess = true).fetchDeals()
+
+        assertEquals(
+            "android",
+            server.takeRequest().headers["X-PriceErrors-Closed-Test"],
+        )
+    }
+
+    @Test
+    fun `registers an Android FCM token with its platform`() = runTest {
+        server.enqueue(MockResponse(code = 200, body = """{"success":true}"""))
+
+        api().registerAndroidDevice(
+            token = "fcm-token",
+            bundleId = "app.priceerrors",
+            closedTestAccess = true,
+        )
+
+        val recorded = server.takeRequest()
+        assertEquals("POST", recorded.method)
+        assertEquals("/devices/register", recorded.url.encodedPath)
+        assertEquals(
+            """{"token":"fcm-token","bundle_id":"app.priceerrors","platform":"android","closed_test_access":true}""",
+            recorded.body?.utf8(),
+        )
+    }
+
+    @Test
+    fun `unregisters a device before sign out`() = runTest {
+        server.enqueue(MockResponse(code = 200, body = """{"success":true}"""))
+
+        api().unregisterDevice("fcm-token")
+
+        val recorded = server.takeRequest()
+        assertEquals("DELETE", recorded.method)
+        assertEquals("/devices/register", recorded.url.encodedPath)
+        assertEquals("""{"token":"fcm-token"}""", recorded.body?.utf8())
+    }
+
+    @Test
+    fun `account deletion failure remains visible to the caller`() = runTest {
+        server.enqueue(MockResponse(code = 500, body = """{"error":"Failed to delete account"}"""))
+
+        val result = api().deleteAccount()
+
+        val recorded = server.takeRequest()
+        assertEquals("DELETE", recorded.method)
+        assertEquals("/account", recorded.url.encodedPath)
+        assertTrue(result.isFailure)
+    }
+
+    @Test
+    fun `marks a device opened to reset its unseen count`() = runTest {
+        server.enqueue(MockResponse(code = 200, body = """{"success":true}"""))
+
+        api().markDeviceOpened("fcm-token")
+
+        val recorded = server.takeRequest()
+        assertEquals("POST", recorded.method)
+        assertEquals("/devices/seen", recorded.url.encodedPath)
+        assertEquals("""{"token":"fcm-token"}""", recorded.body?.utf8())
     }
 
     @Test
@@ -134,6 +209,125 @@ class PriceErrorsApiTest {
         val error = api().claimDeal("deal-1").exceptionOrNull()
 
         assertEquals(ApiError.LimitReached, error)
+    }
+
+    @Test
+    fun `fetches a claim and decodes claim savings fields`() = runTest {
+        server.enqueue(
+            MockResponse(
+                code = 200,
+                body = """
+                    {
+                      "ok":true,
+                      "status":"opened",
+                      "trackable":true,
+                      "price":19.99,
+                      "original_price":39.99,
+                      "potential_savings":20.0,
+                      "confirmed_at":"2026-09-12T18:00:00Z",
+                      "isPro":true,
+                      "freeRemaining":2,
+                      "freeDailyLimit":3,
+                      "alreadyClaimed":true
+                    }
+                """.trimIndent(),
+            ),
+        )
+
+        val result = api().fetchClaim("claim-7")
+
+        val recorded = server.takeRequest()
+        assertEquals("GET", recorded.method)
+        assertEquals("/claims/claim-7", recorded.url.encodedPath)
+        val response = result.getOrThrow()
+        assertEquals("opened", response.status)
+        assertTrue(response.trackable)
+        assertEquals(19.99, response.price)
+        assertEquals(39.99, response.originalPrice)
+        assertEquals(20.0, response.potentialSavings)
+        assertEquals("2026-09-12T18:00:00Z", response.confirmedAt)
+        assertEquals(true, response.isPro)
+        assertEquals(2, response.freeRemaining)
+        assertEquals(3, response.freeDailyLimit)
+        assertEquals(true, response.alreadyClaimed)
+    }
+
+    @Test
+    fun `confirms a claim with a patch and local date`() = runTest {
+        server.enqueue(
+            MockResponse(
+                code = 200,
+                body = """
+                    {
+                      "ok":true,
+                      "status":"confirmed",
+                      "trackable":true,
+                      "potential_savings":20.0,
+                      "month_savings":45.5,
+                      "lifetime_savings":125.75,
+                      "currency":"USD"
+                    }
+                """.trimIndent(),
+            ),
+        )
+
+        val result = api().confirmDealClaim("claim-7")
+
+        val recorded = server.takeRequest()
+        assertEquals("PATCH", recorded.method)
+        assertEquals("/claims/claim-7/confirm", recorded.url.encodedPath)
+        assertTrue(
+            recorded.body!!.utf8()
+                .matches(Regex("""\{"local_date":"\d{4}-\d{2}-\d{2}"}""")),
+        )
+        val response = result.getOrThrow()
+        assertEquals("confirmed", response.status)
+        assertTrue(response.trackable)
+        assertEquals(20.0, response.potentialSavings)
+        assertEquals(45.5, response.monthSavings, 0.001)
+        assertEquals(125.75, response.lifetimeSavings, 0.001)
+        assertEquals("USD", response.currency)
+    }
+
+    @Test
+    fun `fetches the savings summary route before treating summary as an id`() = runTest {
+        server.enqueue(
+            MockResponse(
+                code = 200,
+                body = """
+                    {
+                      "month_savings":45.5,
+                      "lifetime_savings":125.75,
+                      "currency":"USD"
+                    }
+                """.trimIndent(),
+            ),
+        )
+
+        val result = api().fetchSavingsSummary("2026-09")
+
+        val recorded = server.takeRequest()
+        assertEquals("GET", recorded.method)
+        assertEquals("/claims/summary", recorded.url.encodedPath)
+        assertEquals("2026-09", recorded.url.queryParameter("month"))
+        val response = result.getOrThrow()
+        assertEquals(45.5, response.monthSavings, 0.001)
+        assertEquals(125.75, response.lifetimeSavings, 0.001)
+        assertEquals("USD", response.currency)
+    }
+
+    @Test
+    fun `maps claim confirmation authorization failures`() = runTest {
+        server.enqueue(
+            MockResponse(
+                code = 403,
+                body = """{"error":"Pro required","reason":"pro_required"}""",
+            ),
+        )
+
+        val error = api().confirmDealClaim("claim-7").exceptionOrNull()
+
+        assertEquals(ApiError.ProRequired, error)
     }
 
     @Test

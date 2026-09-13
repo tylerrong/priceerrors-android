@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import app.priceerrors.core.data.DealRepository
 import app.priceerrors.core.model.Deal
+import java.time.Instant
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -16,8 +17,10 @@ data class FeedUiState(
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
     val deals: List<Deal> = emptyList(),
+    val totalDealCount: Int = 0,
     val selectedDealId: String? = null,
     val errorMessage: String? = null,
+    val lastRefreshed: Instant? = null,
 ) {
     val selectedDeal: Deal?
         get() = selectedDealId?.let { id -> deals.firstOrNull { deal -> deal.id == id } }
@@ -46,12 +49,25 @@ class FeedViewModel(
                         current.copy(
                             isLoading = false,
                             deals = deals,
+                            totalDealCount = maxOf(current.totalDealCount, deals.size),
                             selectedDealId = current.selectedDealId?.takeIf { selectedId ->
                                 deals.any { deal -> deal.id == selectedId }
                             },
                         )
                     }
                 }
+        }
+
+        viewModelScope.launch {
+            repository.observeMetadata().collect { metadata ->
+                if (metadata != null) {
+                    _uiState.update { current ->
+                        current.copy(
+                            totalDealCount = maxOf(metadata.total, current.deals.size),
+                        )
+                    }
+                }
+            }
         }
 
         loadInitialFeed()
@@ -64,7 +80,9 @@ class FeedViewModel(
      */
     private fun loadInitialFeed() {
         viewModelScope.launch {
-            repository.refresh().onFailure { error ->
+            repository.refresh().onSuccess {
+                _uiState.update { current -> current.copy(lastRefreshed = Instant.now()) }
+            }.onFailure { error ->
                 _uiState.update { current ->
                     current.copy(
                         isLoading = false,
@@ -72,8 +90,6 @@ class FeedViewModel(
                     )
                 }
             }
-            // Success is handled by the observeFeed collector above, which
-            // clears isLoading when the new deals arrive.
             _uiState.update { current -> current.copy(isLoading = false) }
         }
     }
@@ -92,22 +108,34 @@ class FeedViewModel(
         _uiState.update { current -> current.copy(selectedDealId = null) }
     }
 
-    fun refresh() {
+    fun refresh(forceFull: Boolean = false) {
         if (_uiState.value.isRefreshing) return
 
         viewModelScope.launch {
+            val hadDeals = _uiState.value.deals.isNotEmpty()
             _uiState.update { current ->
-                current.copy(isRefreshing = true, errorMessage = null)
+                current.copy(
+                    isRefreshing = true,
+                    isLoading = !hadDeals,
+                    errorMessage = null,
+                )
             }
 
-            repository.refresh().fold(
+            repository.refresh(forceFull = forceFull).fold(
                 onSuccess = {
-                    _uiState.update { current -> current.copy(isRefreshing = false) }
+                    _uiState.update { current ->
+                        current.copy(
+                            isRefreshing = false,
+                            isLoading = false,
+                            lastRefreshed = Instant.now(),
+                        )
+                    }
                 },
                 onFailure = { error ->
                     _uiState.update { current ->
                         current.copy(
                             isRefreshing = false,
+                            isLoading = false,
                             errorMessage = error.message ?: "Unable to refresh deals.",
                         )
                     }

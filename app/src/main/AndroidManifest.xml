@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
 
     <application
         android:name=".PriceErrorsApplication"
@@ -21,7 +22,19 @@
             android:name="firebase_messaging_auto_init_enabled"
             android:value="false" />
         <meta-data
+            android:name="firebase_messaging_installation_id_enabled"
+            android:value="true" />
+        <meta-data
             android:name="firebase_analytics_collection_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="com.facebook.sdk.AutoInitEnabled"
+            android:value="false" />
+        <meta-data
+            android:name="com.facebook.sdk.AutoLogAppEventsEnabled"
+            android:value="false" />
+        <meta-data
+            android:name="com.facebook.sdk.AdvertiserIDCollectionEnabled"
             android:value="false" />
 
         <service
@@ -43,12 +56,9 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Both hosts are declared because the site 307s the apex to www,
-                 so shared and indexed links are canonically www. Each declared
-                 host must serve its own .well-known/assetlinks.json over HTTPS
-                 *without a redirect* before release, or verification fails.
-                 Both paths are kept while existing iOS/fake fixtures use /deals
-                 and the public site uses /deal. -->
+            <!-- Shared and indexed links are canonicalized to www. The apex host
+                 redirects at Vercel's domain layer, so it cannot participate in
+                 Android App Links verification. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
 
@@ -56,10 +66,21 @@
                 <category android:name="android.intent.category.BROWSABLE" />
 
                 <data android:scheme="https" />
-                <data android:host="priceerrors.app" />
                 <data android:host="www.priceerrors.app" />
                 <data android:pathPrefix="/deal/" />
                 <data android:pathPrefix="/deals/" />
+            </intent-filter>
+
+            <!-- Custom scheme used in share sheets and in-app deep links. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="priceerrors" android:host="deal" />
+                <data android:scheme="priceerrors" android:host="home" />
+                <data android:scheme="priceerrors" android:host="auth" android:path="/callback" />
             </intent-filter>
         </activity>
     </application>

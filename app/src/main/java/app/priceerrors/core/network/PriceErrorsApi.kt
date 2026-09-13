@@ -1,11 +1,14 @@
 package app.priceerrors.core.network
 
+import app.priceerrors.BuildConfig
 import app.priceerrors.core.auth.AccessTokenProvider
 import app.priceerrors.core.model.DealVote
 import java.io.IOException
 import java.time.LocalDate
+import java.time.YearMonth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
@@ -14,6 +17,9 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import app.priceerrors.feature.alerts.DealWatch
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 
 /**
  * Typed access to the PriceErrors server.
@@ -29,6 +35,7 @@ class PriceErrorsApi(
     private val json: Json,
     private val baseUrl: String = ApiConfig.serverBaseUrl,
     private val apiKey: String = ApiConfig.apiKey,
+    private val closedTestAccess: Boolean = BuildConfig.CLOSED_TEST_FREE_ACCESS,
 ) {
     private val isConfigured: Boolean = baseUrl.isNotBlank() && apiKey.isNotBlank()
 
@@ -36,6 +43,7 @@ class PriceErrorsApi(
         page: Int = 1,
         limit: Int = 100,
         category: String? = null,
+        since: String? = null,
     ): Result<DealsResponseDto> {
         val url = (baseUrl.toHttpUrlOrNull() ?: return Result.failure(ApiError.NotConfigured))
             .newBuilder()
@@ -45,10 +53,83 @@ class PriceErrorsApi(
             // The server buckets free-tier claims by the user's local day, so
             // the date has to come from the device, not the server's clock.
             .addQueryParameter("local_date", LocalDate.now().toString())
-            .apply { if (!category.isNullOrBlank()) addQueryParameter("category", category) }
+            .apply {
+                if (!category.isNullOrBlank()) addQueryParameter("category", category)
+                if (!since.isNullOrBlank()) addQueryParameter("since", since)
+            }
             .build()
 
         return execute(Request.Builder().url(url).get())
+    }
+
+    /**
+     * Fetches a single deal by id — used for notification taps and deep links
+     * without waiting for the full multi-page feed refresh.
+     */
+    suspend fun fetchDeal(id: String): Result<DealDto> {
+        val url = baseUrl.toHttpUrlOrNull()?.newBuilder()
+            ?.addPathSegment("deals")
+            ?.addPathSegment(id)
+            ?.build()
+            ?: return Result.failure(ApiError.NotConfigured)
+
+        return execute(Request.Builder().url(url).get())
+    }
+
+    /** Lightweight snapshot of the newest cards plus the active-id set. */
+    suspend fun fetchDealSnapshot(limit: Int = 50): Result<DealsFetchResult> =
+        fetchDeals(page = 1, limit = limit).map { response ->
+            response.toFetchResult()
+        }
+
+    /**
+     * Walks every page and deduplicates by deal id. [onFirstPage] fires once the
+     * first page is decoded so the feed can render while later pages stream in.
+     */
+    suspend fun fetchAllDeals(
+        page: Int = 1,
+        limit: Int = 50,
+        category: String? = null,
+        since: String? = null,
+        onFirstPage: ((DealsFetchResult) -> Unit)? = null,
+    ): Result<DealsFetchResult> {
+        val first = fetchDeals(page = page, limit = limit, category = category, since = since)
+            .getOrElse { return Result.failure(it) }
+        val pages = mutableListOf(first)
+        onFirstPage?.invoke(first.toFetchResult())
+
+        val pageSize = first.limit.coerceAtLeast(1)
+        val finalPage = maxOf(page, kotlin.math.ceil(first.authoritativeTotal().toDouble() / pageSize).toInt())
+        if (page < finalPage) {
+            for (nextPage in (page + 1)..finalPage) {
+                val response = fetchDeals(
+                    page = nextPage,
+                    limit = pageSize,
+                    category = category,
+                    since = since,
+                ).getOrElse { return Result.failure(it) }
+                pages += response
+            }
+        }
+
+        return Result.success(combineDealPages(pages))
+    }
+
+    private fun combineDealPages(pages: List<DealsResponseDto>): DealsFetchResult {
+        val first = pages.first()
+        val seen = LinkedHashSet<String>()
+        val allDeals = pages
+            .flatMap { it.data }
+            .filter { deal -> seen.add(deal.id) }
+        val allVotes = pages.fold(mutableMapOf<String, String>()) { acc, page ->
+            acc.apply { putAll(page.userVotes) }
+        }
+        val allClaimed = pages.flatMap { it.claimedToday }.toSet().toList()
+        return first.toFetchResult(
+            deals = allDeals,
+            claimed = allClaimed,
+            votes = allVotes,
+        )
     }
 
     suspend fun claimDeal(dealId: String): Result<ClaimResponseDto> =
@@ -58,6 +139,29 @@ class PriceErrorsApi(
                     "deal_id" to dealId,
                     "local_date" to LocalDate.now().toString(),
                 ),
+            ),
+        )
+
+    suspend fun fetchSavingsSummary(
+        month: String = YearMonth.now().toString(),
+    ): Result<SavingsSummaryDto> {
+        val url = (baseUrl.toHttpUrlOrNull() ?: return Result.failure(ApiError.NotConfigured))
+            .newBuilder()
+            .addPathSegment("claims")
+            .addPathSegment("summary")
+            .addQueryParameter("month", month)
+            .build()
+
+        return execute(Request.Builder().url(url).get())
+    }
+
+    suspend fun fetchClaim(dealId: String): Result<ClaimResponseDto> =
+        execute(request("claims", dealId).get())
+
+    suspend fun confirmDealClaim(dealId: String): Result<ClaimConfirmationResponseDto> =
+        execute(
+            request("claims", dealId, "confirm").patch(
+                jsonBody("local_date" to LocalDate.now().toString()),
             ),
         )
 
@@ -103,6 +207,91 @@ class PriceErrorsApi(
     suspend fun deleteAccount(): Result<Unit> =
         executeUnit(request("account").delete())
 
+    suspend fun registerAndroidDevice(
+        token: String,
+        bundleId: String,
+        closedTestAccess: Boolean,
+    ): Result<Unit> =
+        executeUnit(
+            request("devices", "register").post(
+                json.encodeToString(
+                    RegisterDeviceBody(
+                        token = token,
+                        bundleId = bundleId,
+                        platform = "android",
+                        closedTestAccess = closedTestAccess,
+                    ),
+                ).toRequestBody(JSON_MEDIA_TYPE),
+            ),
+        )
+
+    suspend fun unregisterDevice(token: String): Result<Unit> =
+        executeUnit(
+            request("devices", "register").delete(
+                json.encodeToString(DeviceTokenBody(token)).toRequestBody(JSON_MEDIA_TYPE),
+            ),
+        )
+
+    suspend fun markDeviceOpened(token: String): Result<Unit> =
+        executeUnit(
+            request("devices", "seen").post(
+                json.encodeToString(DeviceTokenBody(token)).toRequestBody(JSON_MEDIA_TYPE),
+            ),
+        )
+
+    /** Syncs account-level alert choices and this device's permission state. */
+    suspend fun updateDevicePreferences(
+        token: String,
+        enabled: Boolean,
+        notifyAllDeals: Boolean,
+        categories: List<String>,
+        minimumDiscount: Int,
+        timezone: String,
+        watches: List<DealWatch>,
+        quietStartHour: Int? = null,
+        quietEndHour: Int? = null,
+    ): Result<Unit> {
+        val body = DevicePreferencesBody(
+            token = token,
+            enabled = enabled,
+            notifyAllDeals = notifyAllDeals,
+            categories = categories,
+            minimumDiscount = minimumDiscount,
+            quietStartHour = quietStartHour,
+            quietEndHour = quietEndHour,
+            timezone = timezone,
+            watches = watches,
+        )
+        return executeUnit(
+            request("devices", "preferences").post(
+                json.encodeToString(body).toRequestBody(JSON_MEDIA_TYPE),
+            ),
+        )
+    }
+
+    @Serializable
+    private data class RegisterDeviceBody(
+        val token: String,
+        @SerialName("bundle_id") val bundleId: String,
+        val platform: String,
+        @SerialName("closed_test_access") val closedTestAccess: Boolean,
+    )
+
+    @Serializable
+    private data class DeviceTokenBody(val token: String)
+
+    @Serializable
+    private data class DevicePreferencesBody(
+        val token: String,
+        val enabled: Boolean,
+        @SerialName("notify_all_deals") val notifyAllDeals: Boolean,
+        val categories: List<String>,
+        @SerialName("minimum_discount") val minimumDiscount: Int,
+        @SerialName("quiet_start_hour") val quietStartHour: Int?,
+        @SerialName("quiet_end_hour") val quietEndHour: Int?,
+        val timezone: String,
+        val watches: List<DealWatch>,
+    )
     private fun request(vararg segments: String): Request.Builder {
         val url = baseUrl.toHttpUrlOrNull()?.newBuilder()
             ?.apply { segments.forEach(::addPathSegment) }
@@ -175,6 +364,11 @@ class PriceErrorsApi(
                 .header("X-API-Key", apiKey)
                 .header("Authorization", "Bearer $token")
                 .header("Content-Type", "application/json")
+                .apply {
+                    if (closedTestAccess) {
+                        header(CLOSED_TEST_HEADER, CLOSED_TEST_ANDROID_VALUE)
+                    }
+                }
                 .build(),
         ).execute()
 
@@ -194,6 +388,8 @@ class PriceErrorsApi(
     }
 
     private companion object {
+        const val CLOSED_TEST_HEADER = "X-PriceErrors-Closed-Test"
+        const val CLOSED_TEST_ANDROID_VALUE = "android"
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 }

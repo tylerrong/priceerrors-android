@@ -5,7 +5,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +28,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -41,6 +42,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -63,11 +65,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.priceerrors.core.model.Deal
 import app.priceerrors.ui.components.DealArtwork
+import app.priceerrors.ui.components.DealCardPriceGroup
 import app.priceerrors.ui.components.dealAccessibilityLabel
 import app.priceerrors.ui.components.dealVisuals
-import app.priceerrors.ui.components.formatPrice
+import app.priceerrors.ui.components.relativeDealTime
 import app.priceerrors.ui.accessibility.PriceErrorsTestTags
 import app.priceerrors.ui.theme.SpaceGrotesk
+import app.priceerrors.ui.theme.isAppInDarkTheme
 
 private data class BrowseCategory(
     val name: String,
@@ -76,7 +80,7 @@ private data class BrowseCategory(
 )
 
 private val browseCategories = listOf(
-    BrowseCategory(name = "All", icon = "🔥", color = Color(0xFF7C4DFF)),
+    BrowseCategory(name = "All", icon = "💲", color = Color(0xFF7C4DFF)),
     BrowseCategory(name = "Tech", icon = "💻", color = Color(0xFF2D5BFF)),
     BrowseCategory(name = "Beauty", icon = "💅", color = Color(0xFFFF7EB6)),
     BrowseCategory(name = "Food", icon = "🌮", color = Color(0xFF4CAF50)),
@@ -94,6 +98,80 @@ private val browseCategories = listOf(
  */
 @Composable
 fun BrowseScreen(
+    deals: List<Deal>,
+    onDealSelected: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    isLocked: Boolean = false,
+    onUpgrade: () -> Unit = {},
+) {
+    if (isLocked) {
+        LockedBrowsePreview(onUpgrade = onUpgrade, modifier = modifier)
+        return
+    }
+    BrowseScreenContent(
+        deals = deals,
+        onDealSelected = onDealSelected,
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun LockedBrowsePreview(
+    onUpgrade: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .testTag(PriceErrorsTestTags.BROWSE_SCREEN),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .blur(9.dp)
+                .padding(16.dp)
+                .statusBarsPadding(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                "Browse.",
+                fontFamily = SpaceGrotesk,
+                fontWeight = FontWeight.Bold,
+                fontSize = 32.sp,
+            )
+            browseCategories.filter { it.name != "All" }.take(4).forEach { category ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(72.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(MaterialTheme.colorScheme.surface),
+                )
+            }
+        }
+        Button(
+            onClick = onUpgrade,
+            shape = RoundedCornerShape(50),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = Color.White,
+            ),
+        ) {
+            Text(
+                "Unlock Browse",
+                fontFamily = SpaceGrotesk,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun BrowseScreenContent(
     deals: List<Deal>,
     onDealSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -466,7 +544,7 @@ private fun BrowseDealCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val visuals = dealVisuals(deal.category, isSystemInDarkTheme())
+    val visuals = dealVisuals(deal.category, isAppInDarkTheme)
     val shape = RoundedCornerShape(18.dp)
 
     Column(
@@ -497,7 +575,7 @@ private fun BrowseDealCard(
                 .fillMaxWidth()
                 .background(MaterialTheme.colorScheme.surface)
                 .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
             Text(
                 text = deal.title,
@@ -510,30 +588,21 @@ private fun BrowseDealCard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = if (deal.priceInCents == 0L) {
-                        "FREE"
-                    } else {
-                        formatPrice(deal.priceInCents, deal.currencyCode)
-                    },
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontFamily = SpaceGrotesk,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    lineHeight = 19.sp,
-                )
+            DealCardPriceGroup(
+                deal = deal,
+                priceSize = 16,
+                compact = true,
+            )
+            Row(modifier = Modifier.fillMaxWidth()) {
                 Spacer(modifier = Modifier.weight(1f))
                 Text(
-                    text = "-${deal.discountPercent}%",
-                    color = MaterialTheme.colorScheme.primary,
+                    text = relativeDealTime(deal.postedAt),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                     fontFamily = SpaceGrotesk,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 10.sp,
-                    lineHeight = 14.sp,
+                    fontSize = 9.sp,
+                    lineHeight = 12.sp,
+                    maxLines = 1,
                 )
             }
         }

@@ -1,6 +1,5 @@
 package app.priceerrors.feature.detail
 
-import android.content.Intent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -39,12 +38,17 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.CornerRadius
@@ -66,7 +71,6 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -87,8 +91,10 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.priceerrors.R
+import app.priceerrors.core.analytics.GrowthAnalytics
 import app.priceerrors.core.model.Deal
 import app.priceerrors.core.model.DealVote
+import app.priceerrors.core.sharing.DealSharing
 import app.priceerrors.ui.components.DealArtwork
 import app.priceerrors.ui.components.dealVisuals
 import app.priceerrors.ui.components.formatPrice
@@ -102,6 +108,8 @@ import app.priceerrors.ui.theme.SpaceGrotesk
 import app.priceerrors.ui.theme.WorkingGreen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.text.NumberFormat
+import java.util.Locale
 import java.util.Random
 import kotlin.math.PI
 import kotlin.math.roundToInt
@@ -114,6 +122,7 @@ import kotlin.math.sin
  * Defaults keep the screen source-compatible while the app shell is being
  * migrated; production callers should pass all state and callbacks.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DealDetailScreen(
     deal: Deal,
@@ -125,9 +134,16 @@ fun DealDetailScreen(
     onSave: () -> Unit = {},
     onVote: (DealVote) -> Unit = {},
     onClaim: () -> Unit = {},
+    growthAnalytics: GrowthAnalytics? = null,
+    showClaimConfirmation: Boolean = false,
+    claimSavings: Double = 0.0,
+    isConfirmingClaim: Boolean = false,
+    onConfirmClaim: () -> Unit = {},
+    onDeclineClaim: () -> Unit = {},
+    celebrationSavings: Double? = null,
+    onCelebrationFinished: () -> Unit = {},
 ) {
     val context = LocalContext.current
-    val websiteUrl = stringResource(R.string.website_url)
     val uriHandler = LocalUriHandler.current
     val haptics = LocalHapticFeedback.current
     val density = LocalDensity.current
@@ -136,6 +152,19 @@ fun DealDetailScreen(
     val dragOffset = remember { Animatable(0f) }
     val swipeThresholdPx = with(density) { 100.dp.toPx() }
     var showCelebration by remember(deal.id) { mutableStateOf(false) }
+    var displayedSavings by remember(deal.id) { mutableStateOf(0.0) }
+
+    LaunchedEffect(celebrationSavings) {
+        celebrationSavings?.let {
+            displayedSavings = it
+            if (animationsEnabled) {
+                showCelebration = true
+            } else {
+                showCelebration = false
+                onCelebrationFinished()
+            }
+        }
+    }
 
     val windowHeight = with(density) { LocalWindowInfo.current.containerSize.height.toDp() }
     val heroHeight = (windowHeight * 0.42f).coerceIn(320.dp, 440.dp)
@@ -192,16 +221,12 @@ fun DealDetailScreen(
                     onSave()
                 },
                 onShare = {
-                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(
-                            Intent.EXTRA_TEXT,
-                            "🔥 ${deal.title} for ${formatPrice(deal.priceInCents, deal.currencyCode)}" +
-                                " — spotted on PriceErrors!\n" +
-                                (deal.dealUrl ?: websiteUrl),
-                        )
-                    }
-                    context.startActivity(Intent.createChooser(shareIntent, "Share deal"))
+                    DealSharing.presentShareSheet(
+                        context = context,
+                        deal = deal,
+                        source = "deal_detail",
+                        analytics = growthAnalytics,
+                    )
                 },
             )
 
@@ -215,6 +240,14 @@ fun DealDetailScreen(
                     DealBody(
                         deal = deal,
                         selectedVote = selectedVote,
+                        onShare = {
+                            DealSharing.presentShareSheet(
+                                context = context,
+                                deal = deal,
+                                source = "deal_detail",
+                                analytics = growthAnalytics,
+                            )
+                        },
                         onVote = { vote ->
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             onVote(vote)
@@ -228,12 +261,13 @@ fun DealDetailScreen(
             claimed = isClaimed,
             hasDealLink = !deal.dealUrl.isNullOrBlank(),
             onClaim = {
-                if (!isClaimed) {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    showCelebration = animationsEnabled
-                    onClaim()
+                deal.dealUrl?.takeIf(String::isNotBlank)?.let { url ->
+                    if (!isClaimed) {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onClaim()
+                    }
+                    uriHandler.openUri(url)
                 }
-                deal.dealUrl?.takeIf(String::isNotBlank)?.let(uriHandler::openUri)
             },
             modifier = Modifier.align(Alignment.BottomCenter),
         )
@@ -241,8 +275,40 @@ fun DealDetailScreen(
         if (showCelebration) {
             ConfettiOverlay(
                 key = deal.id,
-                onFinished = { showCelebration = false },
+                savings = displayedSavings,
+                onFinished = {
+                    showCelebration = false
+                    onCelebrationFinished()
+                },
                 modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+
+    if (showClaimConfirmation) {
+        ModalBottomSheet(
+            onDismissRequest = {},
+            sheetState = rememberModalBottomSheetState(
+                skipPartiallyExpanded = true,
+                confirmValueChange = { target -> target != SheetValue.Hidden },
+            ),
+            containerColor = MaterialTheme.colorScheme.background,
+            dragHandle = {
+                Box(
+                    Modifier
+                        .padding(top = 8.dp)
+                        .size(width = 42.dp, height = 5.dp)
+                        .background(
+                            MaterialTheme.colorScheme.onBackground.copy(alpha = 0.16f),
+                            CircleShape,
+                        ),
+                )
+            },
+        ) {
+            ClaimConfirmationSheet(
+                isConfirming = isConfirmingClaim,
+                onConfirm = onConfirmClaim,
+                onDecline = onDeclineClaim,
             )
         }
     }
@@ -277,7 +343,8 @@ private fun DealHero(
                 .align(Alignment.Center)
                 .fillMaxWidth()
                 .height(imageHeight)
-                .padding(start = 14.dp, top = 44.dp, end = 14.dp),
+                .padding(start = 14.dp, top = 60.dp, end = 14.dp)
+                .clip(RoundedCornerShape(20.dp)),
             contentScale = ContentScale.Fit,
         )
 
@@ -313,49 +380,6 @@ private fun DealHero(
                     Icons.Filled.Share,
                     contentDescription = "Share deal",
                     modifier = Modifier.size(19.dp),
-                )
-            }
-        }
-
-        Row(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 20.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                horizontalAlignment = Alignment.Start,
-            ) {
-                DetailPill(
-                    text = deal.tag,
-                    background = AppDark.copy(alpha = 0.90f),
-                    foreground = MaterialTheme.colorScheme.tertiary,
-                )
-                DetailPill(
-                    text = "${detailCategoryEmoji(deal.category)} ${relativeDealTime(deal.postedAt)}",
-                    background = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-                    foreground = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            Surface(
-                modifier = Modifier.rotate(-6f),
-                color = MaterialTheme.colorScheme.tertiary,
-                contentColor = AppDark,
-                shape = RoundedCornerShape(14.dp),
-                shadowElevation = 8.dp,
-            ) {
-                Text(
-                    text = "-${deal.discountPercent}%",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                    fontFamily = SpaceGrotesk,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 24.sp,
-                    letterSpacing = (-0.5).sp,
                 )
             }
         }
@@ -408,6 +432,7 @@ private fun CircleChromeButton(
 private fun DealBody(
     deal: Deal,
     selectedVote: DealVote?,
+    onShare: () -> Unit,
     onVote: (DealVote) -> Unit,
 ) {
     val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
@@ -457,6 +482,15 @@ private fun DealBody(
             }
         }
 
+        Text(
+            text = relativeDealTime(deal.postedAt),
+            modifier = Modifier.padding(top = 8.dp),
+            fontFamily = SpaceGrotesk,
+            fontWeight = FontWeight.Bold,
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.42f),
+        )
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -480,6 +514,28 @@ private fun DealBody(
                 working = false,
                 onClick = { onVote(DealVote.NOT_WORKING) },
                 modifier = Modifier.weight(1f),
+            )
+        }
+
+        Button(
+            onClick = onShare,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 14.dp)
+                .height(52.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = Color.White,
+            ),
+        ) {
+            Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "Share link",
+                fontFamily = SpaceGrotesk,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
             )
         }
 
@@ -668,18 +724,10 @@ private fun ClaimBar(
                     contentColor = Color.White,
                 ),
             ) {
-                if (claimed) {
-                    Icon(
-                        Icons.Filled.Check,
-                        contentDescription = null,
-                        modifier = Modifier.size(21.dp),
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                }
                 Text(
                     text = when {
-                        claimed -> "CLAIMED — GOOD LUCK"
-                        hasDealLink -> "CLAIM THIS DEAL  →"
+                        claimed -> "✓  GOT IT"
+                        hasDealLink -> "GET THIS DEAL →"
                         else -> "FOLLOW INSTRUCTIONS"
                     },
                     fontFamily = SpaceGrotesk,
@@ -707,6 +755,7 @@ private data class ConfettiPiece(
 @Composable
 private fun ConfettiOverlay(
     key: String,
+    savings: Double,
     onFinished: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -782,14 +831,92 @@ private fun ConfettiOverlay(
             shape = RoundedCornerShape(8.dp),
             border = BorderStroke(5.dp, NotWorkingRed),
         ) {
-            Text(
-                text = "CLAIMED",
+            Column(
                 modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp),
-                fontFamily = SpaceGrotesk,
-                fontWeight = FontWeight.Bold,
-                fontSize = 30.sp,
-                letterSpacing = 2.sp,
-            )
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = "CLAIMED",
+                    fontFamily = SpaceGrotesk,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 30.sp,
+                    letterSpacing = 2.sp,
+                )
+                Text(
+                    text = "${NumberFormat.getCurrencyInstance(Locale.US).format(savings)} SAVED",
+                    fontFamily = SpaceGrotesk,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    letterSpacing = 0.8.sp,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClaimConfirmationSheet(
+    isConfirming: Boolean,
+    onConfirm: () -> Unit,
+    onDecline: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(start = 18.dp, end = 18.dp, bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(22.dp),
+    ) {
+        Text("🤑", fontSize = 54.sp)
+        Text(
+            "Did you get it?",
+            fontFamily = SpaceGrotesk,
+            fontWeight = FontWeight.Bold,
+            fontSize = 26.sp,
+            letterSpacing = (-0.7).sp,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Button(
+                onClick = onConfirm,
+                enabled = !isConfirming,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(52.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF22C55E),
+                    contentColor = Color.White,
+                ),
+            ) {
+                if (isConfirming) {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Text("YES", fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold)
+                }
+            }
+            Button(
+                onClick = onDecline,
+                enabled = !isConfirming,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(52.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFEF4444),
+                    contentColor = Color.White,
+                ),
+            ) {
+                Text("NO", fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }

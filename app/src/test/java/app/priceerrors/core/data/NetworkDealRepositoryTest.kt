@@ -1,6 +1,7 @@
 package app.priceerrors.core.data
 
 import app.priceerrors.core.auth.AccessTokenProvider
+import java.nio.file.Files
 import app.priceerrors.core.model.DealVote
 import app.priceerrors.core.network.ApiError
 import app.priceerrors.core.network.PriceErrorsApi
@@ -30,6 +31,7 @@ class NetworkDealRepositoryTest {
     fun setUp() {
         server = MockWebServer()
         server.start()
+        val cacheRoot = Files.createTempDirectory("deal-feed-test").toFile()
         repository = NetworkDealRepository(
             PriceErrorsApi(
                 httpClient = OkHttpClient(),
@@ -38,6 +40,8 @@ class NetworkDealRepositoryTest {
                 baseUrl = server.url("/").toString().trimEnd('/'),
                 apiKey = "test-api-key",
             ),
+            cacheRoot = cacheRoot,
+            userIdProvider = { null },
         )
     }
 

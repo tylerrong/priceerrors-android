@@ -11,18 +11,18 @@ data class DealVisuals(
 
 fun dealVisuals(category: String, darkTheme: Boolean): DealVisuals =
     when (category.trim().lowercase()) {
-        "tech" -> DealVisuals(Color(0xFFE8F4FD), if (darkTheme) Color(0xFF8FA3FF) else Color(0xFF3D5AFF), "🎧")
-        "fashion" -> DealVisuals(Color(0xFFFFF0F5), if (darkTheme) Color(0xFFFF7EA0) else Color(0xFFFF3D6E), "👟")
-        "food" -> DealVisuals(Color(0xFFE8F5E9), if (darkTheme) Color(0xFF7ED982) else Color(0xFF4CAF50), "🍿")
-        "beauty" -> DealVisuals(Color(0xFFFFF0E5), if (darkTheme) Color(0xFFFF9066) else Color(0xFFFF6B35), "✨")
-        "travel" -> DealVisuals(Color(0xFFE3F2FD), if (darkTheme) Color(0xFF8FA3FF) else Color(0xFF2D5BFF), "✈️")
-        "events", "event" -> DealVisuals(Color(0xFFFCE4EC), if (darkTheme) Color(0xFFFF6B9D) else Color(0xFFE91E63), "🎟️")
+        "tech" -> DealVisuals(Color(0xFF2D5BFF), if (darkTheme) Color(0xFF8FA3FF) else Color(0xFF3D5AFF), "🎧")
+        "fashion" -> DealVisuals(Color(0xFF7C4DFF), if (darkTheme) Color(0xFFFF7EA0) else Color(0xFFFF3D6E), "👟")
+        "food" -> DealVisuals(Color(0xFF4CAF50), if (darkTheme) Color(0xFF7ED982) else Color(0xFF4CAF50), "🍿")
+        "beauty" -> DealVisuals(Color(0xFFFF7EB6), if (darkTheme) Color(0xFFFF9066) else Color(0xFFFF6B35), "✨")
+        "travel" -> DealVisuals(Color(0xFF00B4D8), if (darkTheme) Color(0xFF8FA3FF) else Color(0xFF2D5BFF), "✈️")
+        "events", "event" -> DealVisuals(Color(0xFFE91E63), if (darkTheme) Color(0xFFFF6B9D) else Color(0xFFE91E63), "🎟️")
         // Yellow to match the iOS palette. As on iOS the light-mode value is
         // pulled down from #FFC93D so it stays legible as text, not just as fill.
-        "gaming" -> DealVisuals(Color(0xFFFFF8E1), if (darkTheme) Color(0xFFFFD75E) else Color(0xFFB8860B), "🕹️")
-        "amazon" -> DealVisuals(Color(0xFFFFF3E0), if (darkTheme) Color(0xFFFFB340) else Color(0xFFFF9900), "📦")
+        "gaming" -> DealVisuals(Color(0xFFFFC93D), if (darkTheme) Color(0xFFFFD75E) else Color(0xFFB8860B), "🕹️")
+        "amazon" -> DealVisuals(Color(0xFFFF8A3D), if (darkTheme) Color(0xFFFFB340) else Color(0xFFFF9900), "📦")
         else -> DealVisuals(
-            background = if (darkTheme) Color(0xFF292929) else Color(0xFFF7F5F0),
+            background = Color(0xFF00C897),
             accent = if (darkTheme) Color(0xFFEDEDED) else Color(0xFF0A0A0A),
             emoji = "🏷️",
         )

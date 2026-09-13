@@ -18,6 +18,22 @@ class FloatingTabBarTest {
     val compose = createComposeRule()
 
     @Test
+    fun alertsTabExposesAndUpdatesSelection() {
+        var selected by mutableStateOf(MainTab.FEED)
+        compose.setContent {
+            PriceErrorsTheme {
+                FloatingTabBar(
+                    selectedTab = selected,
+                    onTabSelected = { selected = it },
+                )
+            }
+        }
+
+        compose.onNodeWithTag(PriceErrorsTestTags.ALERTS_TAB).performClick()
+        compose.onNodeWithTag(PriceErrorsTestTags.ALERTS_TAB).assertIsSelected()
+    }
+
+    @Test
     fun browseTabExposesAndUpdatesSelection() {
         var selected by mutableStateOf(MainTab.FEED)
         compose.setContent {

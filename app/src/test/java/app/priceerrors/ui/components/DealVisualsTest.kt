@@ -49,6 +49,26 @@ class DealVisualsTest {
     }
 
     @Test
+    fun `image stages use the saturated iOS category palette`() {
+        val expected = mapOf(
+            "tech" to Color(0xFF2D5BFF),
+            "fashion" to Color(0xFF7C4DFF),
+            "food" to Color(0xFF4CAF50),
+            "beauty" to Color(0xFFFF7EB6),
+            "travel" to Color(0xFF00B4D8),
+            "events" to Color(0xFFE91E63),
+            "gaming" to Color(0xFFFFC93D),
+            "amazon" to Color(0xFFFF8A3D),
+            "other" to Color(0xFF00C897),
+        )
+
+        expected.forEach { (category, color) ->
+            assertEquals(category, color, dealVisuals(category, darkTheme = false).background)
+            assertEquals(category, color, dealVisuals(category, darkTheme = true).background)
+        }
+    }
+
+    @Test
     fun `every category tag clears WCAG AA on its tinted chip`() {
         val lightCard = Color(0xFFFFFFFF)
         val darkCard = Color(0xFF1E1E1E)

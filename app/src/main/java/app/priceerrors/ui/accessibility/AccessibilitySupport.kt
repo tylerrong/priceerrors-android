@@ -9,6 +9,8 @@ import androidx.compose.ui.platform.LocalContext
 object PriceErrorsTestTags {
     const val MAIN_NAVIGATION = "main_navigation"
     const val FEED_TAB = "tab_feed"
+    const val ALERTS_TAB = "tab_alerts"
+    @Deprecated("Community tab removed; use ALERTS_TAB")
     const val COMMUNITY_TAB = "tab_community"
     const val BROWSE_TAB = "tab_browse"
     const val PROFILE_TAB = "tab_profile"

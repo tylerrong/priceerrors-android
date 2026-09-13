@@ -14,6 +14,7 @@ import com.android.billingclient.api.PurchasesUpdatedListener
 import com.android.billingclient.api.QueryProductDetailsParams
 import com.android.billingclient.api.QueryPurchasesParams
 import app.priceerrors.BuildConfig
+import app.priceerrors.core.analytics.PostHogAnalytics
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +24,7 @@ enum class BillingPlan {
     WEEKLY,
     MONTHLY,
     YEARLY,
+    RESCUE,
 }
 
 data class BillingProduct(
@@ -30,6 +32,7 @@ data class BillingProduct(
     val productId: String,
     val formattedPrice: String,
     val offerToken: String,
+    val introductoryPrice: String? = null,
 )
 
 data class BillingState(
@@ -39,7 +42,10 @@ data class BillingState(
     val isPro: Boolean = false,
     val products: Map<BillingPlan, BillingProduct> = emptyMap(),
     val message: String? = null,
-)
+) {
+    val rescueAvailable: Boolean
+        get() = products.containsKey(BillingPlan.RESCUE)
+}
 
 /**
  * Complete Play Billing client flow. Purchase tokens are acknowledged locally
@@ -47,13 +53,19 @@ data class BillingState(
  * become server-authoritative when the backend milestone is implemented.
  */
 class BillingManager(context: Context) : PurchasesUpdatedListener {
+    var onSubscriptionPurchased: ((BillingPlan, Double, String, Boolean) -> Unit)? = null
     private val productDetails = mutableMapOf<BillingPlan, ProductDetails>()
-    private val productIds: Map<BillingPlan, String> = mapOf(
+    private val coreProductIds: Map<BillingPlan, String> = mapOf(
         BillingPlan.WEEKLY to BuildConfig.BILLING_WEEKLY_PRODUCT_ID,
         BillingPlan.MONTHLY to BuildConfig.BILLING_MONTHLY_PRODUCT_ID,
         BillingPlan.YEARLY to BuildConfig.BILLING_YEARLY_PRODUCT_ID,
     )
-    private val configured = productIds.values.all(String::isNotBlank)
+    private val rescueProductId: String = BuildConfig.BILLING_RESCUE_PRODUCT_ID
+    private val productIds: Map<BillingPlan, String> = buildMap {
+        putAll(coreProductIds)
+        if (rescueProductId.isNotBlank()) put(BillingPlan.RESCUE, rescueProductId)
+    }
+    private val configured = coreProductIds.values.all(String::isNotBlank)
     private val _state = MutableStateFlow(BillingState(isConfigured = configured))
     val state: StateFlow<BillingState> = _state.asStateFlow()
 
@@ -190,7 +202,22 @@ class BillingManager(context: Context) : PurchasesUpdatedListener {
                         purchase.purchaseState == Purchase.PurchaseState.PURCHASED &&
                             purchase.products.any { it in productIds.values }
                     }
-                purchased.forEach(::acknowledgeIfNeeded)
+                purchased.forEach { purchase ->
+                    acknowledgeIfNeeded(purchase)
+                    purchase.products
+                        .firstNotNullOfOrNull { productId -> productIds.entries.firstOrNull { it.value == productId }?.key }
+                        ?.let { plan ->
+                            productDetails[plan]?.let { details ->
+                                val offer = details.subscriptionOfferDetails?.firstOrNull()
+                                val phase = offer?.pricingPhases?.pricingPhaseList?.lastOrNull()
+                                val price = phase?.priceAmountMicros?.toDouble()?.div(1_000_000.0) ?: 0.0
+                                val currency = phase?.priceCurrencyCode ?: "USD"
+                                val isTrial = (offer?.pricingPhases?.pricingPhaseList?.size ?: 0) > 1 &&
+                                    offer?.pricingPhases?.pricingPhaseList?.firstOrNull()?.priceAmountMicros == 0L
+                                onSubscriptionPurchased?.invoke(plan, price, currency, isTrial)
+                            }
+                        }
+                }
                 _state.update {
                     it.copy(
                         isLoading = false,
@@ -234,8 +261,11 @@ class BillingManager(context: Context) : PurchasesUpdatedListener {
                         ?: return@forEach
                     val offer = details.subscriptionOfferDetails?.firstOrNull()
                         ?: return@forEach
-                    val price = offer.pricingPhases.pricingPhaseList.lastOrNull()?.formattedPrice
-                        ?: return@forEach
+                    val phases = offer.pricingPhases.pricingPhaseList
+                    val price = phases.lastOrNull()?.formattedPrice ?: return@forEach
+                    val intro = phases.firstOrNull()
+                        ?.takeIf { phases.size > 1 }
+                        ?.formattedPrice
                     productDetails[plan] = details
                     put(
                         plan,
@@ -244,6 +274,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener {
                             productId = details.productId,
                             formattedPrice = price,
                             offerToken = offer.offerToken,
+                            introductoryPrice = intro,
                         ),
                     )
                 }
@@ -252,7 +283,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener {
                 it.copy(
                     isLoading = false,
                     products = mapped,
-                    message = if (mapped.isEmpty()) {
+                    message = if (mapped.filterKeys { plan -> plan != BillingPlan.RESCUE }.isEmpty()) {
                         "No active subscription products were returned by Google Play."
                     } else {
                         null
@@ -276,6 +307,13 @@ class BillingManager(context: Context) : PurchasesUpdatedListener {
 
     private fun publishBillingError(result: BillingResult, prefix: String) {
         val detail = result.debugMessage.takeIf(String::isNotBlank)
+        PostHogAnalytics.captureException(
+            IllegalStateException("$prefix (billing code ${result.responseCode})"),
+            mapOf(
+                "flow" to "play_billing",
+                "response_code" to result.responseCode.toString(),
+            ),
+        )
         _state.update {
             it.copy(
                 isLoading = false,

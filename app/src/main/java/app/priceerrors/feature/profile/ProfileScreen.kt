@@ -2,6 +2,7 @@ package app.priceerrors.feature.profile
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,25 +29,21 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.LocalOffer
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -63,7 +60,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -75,6 +74,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.priceerrors.R
 import app.priceerrors.core.model.Deal
 import app.priceerrors.ui.components.DealArtwork
 import app.priceerrors.ui.components.PigMark
@@ -85,6 +85,8 @@ import app.priceerrors.ui.theme.AppDark
 import app.priceerrors.ui.theme.NotWorkingRed
 import app.priceerrors.ui.theme.SpaceGrotesk
 import app.priceerrors.ui.accessibility.PriceErrorsTestTags
+import java.text.NumberFormat
+import java.util.Locale
 
 /**
  * Self-contained visual port of the iOS profile surface.
@@ -123,7 +125,11 @@ fun ProfileScreen(
     onOpenPrivacy: () -> Unit = {},
     onOpenTerms: () -> Unit = {},
     onOpenAccountDeletion: () -> Unit = {},
+    onOpenDiscord: () -> Unit = {},
     showNavigation: Boolean = true,
+    monthSavings: Double = 0.0,
+    lifetimeSavings: Double = 0.0,
+    onOpenAlertSettings: () -> Unit = { onTabSelected(ProfileTab.ALERTS) },
 ) {
     var displayedName by rememberSaveable(name) { mutableStateOf(name) }
     var editNameVisible by rememberSaveable { mutableStateOf(false) }
@@ -132,8 +138,16 @@ fun ProfileScreen(
     var palette by remember(selectedPalette) { mutableStateOf(selectedPalette) }
     var feedLayout by remember(selectedFeedLayout) { mutableStateOf(selectedFeedLayout) }
     var appearance by remember(selectedAppearance) { mutableStateOf(selectedAppearance) }
-    var removedPostIds by remember { mutableStateOf(emptySet<String>()) }
-    val visiblePosts = myPosts.filterNot { it.id in removedPostIds }
+    @Suppress("UNUSED_VARIABLE")
+    val unusedMyPosts = myPosts
+    @Suppress("UNUSED_VARIABLE")
+    val unusedOnDeletePost = onDeletePost
+    @Suppress("UNUSED_VARIABLE")
+    val unusedDayStreak = dayStreak
+    @Suppress("UNUSED_VARIABLE")
+    val unusedPushAlertsEnabled = pushAlertsEnabled
+    @Suppress("UNUSED_VARIABLE")
+    val unusedOnPushAlertsChanged = onPushAlertsChanged
 
     Box(
         modifier = modifier
@@ -148,6 +162,13 @@ fun ProfileScreen(
             contentPadding = PaddingValues(bottom = 152.dp),
         ) {
             item { ProfileHeading(accent = palette.primary) }
+            item {
+                SavingsHero(
+                    monthSavings = monthSavings,
+                    lifetimeSavings = lifetimeSavings,
+                    palette = palette,
+                )
+            }
             item {
                 IdentityCard(
                     name = displayedName,
@@ -165,34 +186,10 @@ fun ProfileScreen(
                 )
             }
             item {
-                StatsRow(
-                    dayStreak = dayStreak,
-                    savedCount = savedDeals.size,
-                )
-            }
-            item {
-                SectionHeading(
-                    title = "My posts",
-                    trailing = "${visiblePosts.size} posted",
+                DiscordJoinCard(
                     accent = palette.primary,
+                    onOpenDiscord = onOpenDiscord,
                 )
-            }
-            if (visiblePosts.isEmpty()) {
-                item {
-                    EmptySectionCopy("Deals you post on the Community page appear here.")
-                }
-            } else {
-                items(visiblePosts, key = { it.id }) { post ->
-                    MyPostRow(
-                        post = post,
-                        onDelete = {
-                            removedPostIds = removedPostIds + post.id
-                            onDeletePost(post.id)
-                        },
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp),
-                    )
-                }
-                item { Spacer(Modifier.height(12.dp)) }
             }
             item {
                 SectionHeading(
@@ -220,17 +217,6 @@ fun ProfileScreen(
                 }
             }
             item {
-                SettingsCard(
-                    pushAlertsEnabled = pushAlertsEnabled,
-                    accent = palette.primary,
-                    onPushAlertsChanged = onPushAlertsChanged,
-                    onHelp = { informationSheet = ProfileSheet.HELP },
-                    onPrivacy = { informationSheet = ProfileSheet.PRIVACY },
-                    onTerms = { informationSheet = ProfileSheet.TERMS },
-                    onSignOut = { signOutConfirmationVisible = true },
-                )
-            }
-            item {
                 PreferenceCard(
                     palette = palette,
                     feedLayout = feedLayout,
@@ -247,6 +233,16 @@ fun ProfileScreen(
                         appearance = it
                         onAppearanceSelected(it)
                     },
+                )
+            }
+            item {
+                SettingsCard(
+                    accent = palette.primary,
+                    onAlertSettings = onOpenAlertSettings,
+                    onHelp = { informationSheet = ProfileSheet.HELP },
+                    onPrivacy = { informationSheet = ProfileSheet.PRIVACY },
+                    onTerms = { informationSheet = ProfileSheet.TERMS },
+                    onSignOut = { signOutConfirmationVisible = true },
                 )
             }
         }
@@ -289,7 +285,7 @@ fun ProfileScreen(
         AlertDialog(
             onDismissRequest = { signOutConfirmationVisible = false },
             title = { Text("Sign out?") },
-            text = { Text("Your saved deals and claim streak will stay on this device.") },
+            text = { Text("Your account data and saved deals remain synced until you delete your account.") },
             confirmButton = {
                 TextButton(onClick = {
                     signOutConfirmationVisible = false
@@ -338,8 +334,8 @@ private fun IdentityCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 14.dp, vertical = 4.dp),
-        color = AppDark,
-        contentColor = Color.White,
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
         shape = RoundedCornerShape(24.dp),
     ) {
         Row(
@@ -375,9 +371,9 @@ private fun IdentityCard(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = email,
+                    text = email.ifBlank { "Signed in with Google" },
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.50f),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.50f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -385,14 +381,14 @@ private fun IdentityCard(
             IconButton(
                 onClick = onEdit,
                 modifier = Modifier
-                    .size(48.dp)
-                    .background(Color.White.copy(alpha = 0.10f), CircleShape),
+                    .size(32.dp)
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), CircleShape),
             ) {
                 Icon(
                     imageVector = Icons.Filled.Edit,
                     contentDescription = "Edit display name",
-                    modifier = Modifier.size(18.dp),
-                    tint = Color.White.copy(alpha = 0.72f),
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
                 )
             }
         }
@@ -452,9 +448,9 @@ private fun ProCard(
                 )
                 Text(
                     text = if (isPro) {
-                        "Unlimited deals + community"
+                        "Unlimited deals + custom alerts"
                     } else {
-                        "Unlock all deals & community — 7 days free"
+                        "Unlock every deal and personalized alert"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
@@ -508,59 +504,81 @@ private fun CrownMark(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun StatsRow(
-    dayStreak: Int,
-    savedCount: Int,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        StatCard(
-            value = dayStreak.toString(),
-            label = "DAY STREAK",
-            modifier = Modifier.weight(1f),
-        )
-        StatCard(
-            value = savedCount.toString(),
-            label = "DEALS SAVED",
-            modifier = Modifier.weight(1f),
-        )
-    }
-}
-
-@Composable
-private fun StatCard(
-    value: String,
-    label: String,
-    modifier: Modifier = Modifier,
+private fun SavingsHero(
+    monthSavings: Double,
+    lifetimeSavings: Double,
+    palette: ProfilePalette,
 ) {
     Surface(
-        modifier = modifier,
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(18.dp),
-        shadowElevation = 1.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .padding(bottom = 8.dp),
+        color = Color.Transparent,
+        contentColor = Color.White,
+        shape = RoundedCornerShape(26.dp),
+        shadowElevation = 8.dp,
     ) {
         Column(
-            modifier = Modifier.padding(vertical = 14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            modifier = Modifier
+                .background(Brush.linearGradient(listOf(palette.primary, palette.secondary)))
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             Text(
-                text = value,
-                fontFamily = SpaceGrotesk,
-                fontWeight = FontWeight.Bold,
-                fontSize = 20.sp,
-                letterSpacing = (-0.5).sp,
-            )
-            Text(
-                text = label,
+                text = "YOUR SAVINGS",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.56f),
-                letterSpacing = 0.3.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White.copy(alpha = 0.64f),
+                letterSpacing = 1.1.sp,
             )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = formatSavings(monthSavings),
+                    fontFamily = SpaceGrotesk,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 42.sp,
+                    letterSpacing = (-1.7).sp,
+                    maxLines = 1,
+                )
+                Text(
+                    text = "saved this month",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White.copy(alpha = 0.68f),
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = formatSavings(lifetimeSavings),
+                        fontFamily = SpaceGrotesk,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 21.sp,
+                        maxLines = 1,
+                    )
+                    Text(
+                        text = "LIFETIME SAVINGS",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White.copy(alpha = 0.55f),
+                        letterSpacing = 0.8.sp,
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                if (lifetimeSavings == 0.0) {
+                    Text(
+                        text = "Confirm your first deal\nto start tracking",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White.copy(alpha = 0.55f),
+                        textAlign = TextAlign.End,
+                    )
+                }
+            }
         }
     }
 }
@@ -606,56 +624,59 @@ private fun EmptySectionCopy(text: String) {
 }
 
 @Composable
-private fun MyPostRow(
-    post: ProfilePost,
-    onDelete: () -> Unit,
-    modifier: Modifier = Modifier,
+private fun DiscordJoinCard(
+    accent: Color,
+    onOpenDiscord: () -> Unit,
 ) {
     Surface(
-        modifier = modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+            .clickable(
+                role = Role.Button,
+                onClick = onOpenDiscord,
+            ),
         color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(18.dp),
-        shadowElevation = 2.dp,
+        shape = RoundedCornerShape(20.dp),
+        shadowElevation = 1.dp,
     ) {
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(15.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Box(
                 modifier = Modifier
-                    .size(56.dp)
-                    .background(categoryColor(post.category).copy(alpha = 0.15f), RoundedCornerShape(14.dp)),
+                    .size(42.dp)
+                    .background(accent.copy(alpha = 0.12f), RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(categoryEmoji(post.category), fontSize = 28.sp)
+                Image(
+                    painter = painterResource(R.drawable.discord_symbol_blurple),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(28.dp),
+                )
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = post.title,
-                    style = MaterialTheme.typography.labelLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    text = "Join our Discord",
+                    fontFamily = SpaceGrotesk,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
                 )
                 Text(
-                    text = post.priceLabel,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                    text = "Get updates and talk deals with other members.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                 )
             }
-            IconButton(
-                onClick = onDelete,
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(NotWorkingRed.copy(alpha = 0.08f), CircleShape),
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.DeleteOutline,
-                    contentDescription = "Delete post",
-                    tint = NotWorkingRed.copy(alpha = 0.75f),
-                )
-            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(16.dp),
+            )
         }
     }
 }
@@ -714,9 +735,8 @@ private fun SavedDealCard(
 
 @Composable
 private fun SettingsCard(
-    pushAlertsEnabled: Boolean,
     accent: Color,
-    onPushAlertsChanged: (Boolean) -> Unit,
+    onAlertSettings: () -> Unit,
     onHelp: () -> Unit,
     onPrivacy: () -> Unit,
     onTerms: () -> Unit,
@@ -732,17 +752,9 @@ private fun SettingsCard(
         Column {
             SettingRow(
                 icon = Icons.Filled.Notifications,
-                title = "Push alerts",
+                title = "Alert settings",
                 iconTint = accent,
-                trailing = {
-                    Switch(
-                        checked = pushAlertsEnabled,
-                        onCheckedChange = onPushAlertsChanged,
-                        modifier = Modifier.semantics {
-                            contentDescription = "Push alerts"
-                        },
-                    )
-                },
+                onClick = onAlertSettings,
             )
             SettingsDivider()
             SettingRow(
@@ -1030,12 +1042,12 @@ private fun ProfileFloatingTabBar(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ProfileTabIcon(
-                    icon = Icons.Outlined.Groups,
-                    label = "Community",
+                    icon = Icons.Filled.Notifications,
+                    label = "Alerts",
                     selected = false,
-                    testTag = PriceErrorsTestTags.COMMUNITY_TAB,
+                    testTag = PriceErrorsTestTags.ALERTS_TAB,
                     tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                    onClick = { onTabSelected(ProfileTab.COMMUNITY) },
+                    onClick = { onTabSelected(ProfileTab.ALERTS) },
                     modifier = Modifier.weight(1f),
                 )
                 ProfileTabIcon(
@@ -1049,7 +1061,7 @@ private fun ProfileFloatingTabBar(
                 )
                 ProfileTabIcon(
                     icon = Icons.Filled.AccountCircle,
-                    label = "Profile",
+                    label = "You",
                     selected = true,
                     testTag = PriceErrorsTestTags.PROFILE_TAB,
                     tint = accent,
@@ -1101,24 +1113,5 @@ internal fun profileInitials(name: String): String {
     }
 }
 
-private fun categoryEmoji(category: String): String = when (category.trim().lowercase()) {
-    "tech" -> "💻"
-    "fashion" -> "👟"
-    "food" -> "🌮"
-    "beauty" -> "💅"
-    "gaming" -> "🕹️"
-    "events", "event" -> "🎫"
-    "travel" -> "🛫"
-    else -> "📦"
-}
-
-private fun categoryColor(category: String): Color = when (category.trim().lowercase()) {
-    "tech" -> Color(0xFF2D5BFF)
-    "fashion" -> Color(0xFFC2185B)
-    "food" -> Color(0xFF4CAF50)
-    "beauty" -> Color(0xFFFF7EB6)
-    "gaming" -> Color(0xFFFFC93D)
-    "events", "event" -> Color(0xFFE91E63)
-    "travel" -> Color(0xFF2D5BFF)
-    else -> Color(0xFF607D8B)
-}
+internal fun formatSavings(amount: Double): String =
+    NumberFormat.getCurrencyInstance(Locale.US).format(amount.coerceAtLeast(0.0))
