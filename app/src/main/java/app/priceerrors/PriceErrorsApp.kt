@@ -64,7 +64,6 @@ import app.priceerrors.core.notifications.NotificationTokenStore
 import app.priceerrors.core.model.DealVote
 import app.priceerrors.feature.alerts.AlertsScreen
 import app.priceerrors.feature.alerts.DealWatch
-import app.priceerrors.feature.alerts.LockedAlertsPreview
 import app.priceerrors.feature.alerts.RecentDealAlert
 import app.priceerrors.feature.auth.AuthScreen
 import app.priceerrors.feature.browse.BrowseScreen
@@ -80,6 +79,7 @@ import app.priceerrors.feature.paywall.PaywallScreen
 import app.priceerrors.feature.paywall.PaywallPlan
 import app.priceerrors.feature.paywall.PaywallPricing
 import app.priceerrors.feature.paywall.RescueOfferScreen
+import app.priceerrors.feature.profile.MaximizeDealsScreen
 import app.priceerrors.feature.profile.ProfileAppearance
 import app.priceerrors.feature.profile.ProfileFeedLayout
 import app.priceerrors.feature.profile.ProfilePalette
@@ -157,7 +157,7 @@ fun PriceErrorsApp(
     var showPostPurchaseSetup by rememberSaveable { mutableStateOf(false) }
     var showReviewMoment by rememberSaveable { mutableStateOf(false) }
     var showRescueOffer by rememberSaveable { mutableStateOf(false) }
-    var hasEnteredLockedPreview by rememberSaveable { mutableStateOf(false) }
+    var showMaximizeDeals by rememberSaveable { mutableStateOf(false) }
     var isFinishingPostPurchase by remember { mutableStateOf(false) }
     var pendingClaimDealId by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingClaimSavings by rememberSaveable { mutableStateOf(0.0) }
@@ -278,6 +278,8 @@ fun PriceErrorsApp(
         supabaseAuthClient.session.value?.userId?.let { userId ->
             growthAnalytics.identify(userId)
         }
+        // Transition immediately; feed refresh starts without waiting for
+        // notification sync so auth does not sit idle after the spinner stops.
         stageName = if (
             preferences.hasCompletedOnboarding ||
             BuildConfig.CLOSED_TEST_FREE_ACCESS
@@ -286,6 +288,7 @@ fun PriceErrorsApp(
         } else {
             AppStage.PAYWALL.name
         }
+        feedViewModel.refresh(forceFull = true)
     }
 
     fun requestPlayReview() {
@@ -504,7 +507,7 @@ fun PriceErrorsApp(
         if (hasFullAccess) {
             selectedDealId = dealId
         } else {
-            presentUpgradePaywall("deal_gate")
+            presentUpgradePaywall("locked_deal")
         }
     }
 
@@ -693,7 +696,6 @@ fun PriceErrorsApp(
     fun handleSubscriptionActivated(plan: String = "unknown") {
         showUpgradePaywall = false
         showRescueOffer = false
-        hasEnteredLockedPreview = false
         growthAnalytics.track("subscription_activated", mapOf("plan" to plan))
         if (!preferences.postPurchaseSetupCompleted) {
             showPostPurchaseSetup = true
@@ -703,7 +705,6 @@ fun PriceErrorsApp(
 
     fun dismissUpgradePaywall() {
         showUpgradePaywall = false
-        hasEnteredLockedPreview = true
         preferences.hasCompletedOnboarding = true
         growthAnalytics.track("paywall_dismissed", mapOf("count" to "1"))
         scope.launch {
@@ -716,7 +717,6 @@ fun PriceErrorsApp(
 
     fun dismissOnboardingPaywall() {
         preferences.hasCompletedOnboarding = true
-        hasEnteredLockedPreview = true
         stageName = AppStage.MAIN.name
         growthAnalytics.track("paywall_closed", mapOf("source" to "onboarding"))
         scope.launch {
@@ -796,13 +796,6 @@ fun PriceErrorsApp(
             showUpgradePaywall = false
             showRescueOffer = false
             if (stageName == AppStage.PAYWALL.name) stageName = AppStage.MAIN.name
-        } else if (
-            stageName == AppStage.MAIN.name &&
-            feedMetadata != null &&
-            !hasEnteredLockedPreview
-        ) {
-            // Match iOS: first non-Pro feed snapshot surfaces the paywall once.
-            presentUpgradePaywall("feed_lock")
         }
     }
 
@@ -899,6 +892,9 @@ fun PriceErrorsApp(
             !showReviewMoment && selectedTab != MainTab.FEED,
     ) {
         selectedTabName = MainTab.FEED.name
+    }
+    BackHandler(enabled = showMaximizeDeals) {
+        showMaximizeDeals = false
     }
     BackHandler(enabled = showUpgradePaywall) {
         dismissUpgradePaywall()
@@ -1131,7 +1127,7 @@ fun PriceErrorsApp(
                                 uiState = uiState,
                                 layout = feedLayout,
                                 isLocked = !hasFullAccess,
-                                onUpgrade = { presentUpgradePaywall("feed") },
+                                onUpgrade = { presentUpgradePaywall("locked_deal") },
                                 onDealSelected = ::openDeal,
                                 onRetry = { feedViewModel.refresh(forceFull = true) },
                                 lastRefreshed = uiState.lastRefreshed,
@@ -1158,55 +1154,51 @@ fun PriceErrorsApp(
                                 },
                             )
 
-                            MainTab.ALERTS -> if (hasFullAccess) {
-                                AlertsScreen(
-                                    notifyAllDeals = notifyAllDeals,
-                                    notificationsPermissionGranted = notificationsPermissionGranted,
-                                    onRequestNotificationPermission = { setPushAlerts(true) },
-                                    onNotifyAllDealsChanged = { enabled ->
-                                        notifyAllDeals = enabled
-                                        preferences.notifyAllDeals = enabled
-                                        syncNotificationPreferences()
-                                    },
-                                    watches = dealWatches,
-                                    onAddWatch = { watch ->
-                                        dealWatches = dealWatches + watch
-                                        preferences.dealWatches = dealWatches
-                                        syncNotificationPreferences()
-                                    },
-                                    onAddWatches = { watches ->
-                                        dealWatches = dealWatches + watches
-                                        preferences.dealWatches = dealWatches
-                                        syncNotificationPreferences()
-                                    },
-                                    onRemoveWatch = { id ->
-                                        dealWatches = dealWatches.filterNot { it.id == id }
-                                        preferences.dealWatches = dealWatches
-                                        syncNotificationPreferences()
-                                    },
-                                    preferredCategories = preferredCategories,
-                                    onPreferredCategoriesChanged = { categories ->
-                                        preferredCategories = categories
-                                        preferences.preferredCategories = categories
-                                        syncNotificationPreferences()
-                                    },
-                                    alertMinimumDiscount = alertMinimumDiscount,
-                                    onAlertMinimumDiscountChanged = { value ->
-                                        alertMinimumDiscount = value
-                                        preferences.alertMinimumDiscount = value
-                                        syncNotificationPreferences()
-                                    },
-                                    recentAlerts = recentAlerts,
-                                    onRecentAlertSelected = { dealId -> openDealById(dealId) },
-                                )
-                            } else {
-                                LockedAlertsPreview(onUpgrade = { presentUpgradePaywall("alerts") })
-                            }
+                            MainTab.ALERTS -> AlertsScreen(
+                                notifyAllDeals = notifyAllDeals,
+                                notificationsPermissionGranted = notificationsPermissionGranted,
+                                onRequestNotificationPermission = { setPushAlerts(true) },
+                                onNotifyAllDealsChanged = { enabled ->
+                                    notifyAllDeals = enabled
+                                    preferences.notifyAllDeals = enabled
+                                    syncNotificationPreferences()
+                                },
+                                watches = dealWatches,
+                                onAddWatch = { watch ->
+                                    dealWatches = dealWatches + watch
+                                    preferences.dealWatches = dealWatches
+                                    syncNotificationPreferences()
+                                },
+                                onAddWatches = { watches ->
+                                    dealWatches = dealWatches + watches
+                                    preferences.dealWatches = dealWatches
+                                    syncNotificationPreferences()
+                                },
+                                onRemoveWatch = { id ->
+                                    dealWatches = dealWatches.filterNot { it.id == id }
+                                    preferences.dealWatches = dealWatches
+                                    syncNotificationPreferences()
+                                },
+                                preferredCategories = preferredCategories,
+                                onPreferredCategoriesChanged = { categories ->
+                                    preferredCategories = categories
+                                    preferences.preferredCategories = categories
+                                    syncNotificationPreferences()
+                                },
+                                alertMinimumDiscount = alertMinimumDiscount,
+                                onAlertMinimumDiscountChanged = { value ->
+                                    alertMinimumDiscount = value
+                                    preferences.alertMinimumDiscount = value
+                                    syncNotificationPreferences()
+                                },
+                                recentAlerts = recentAlerts,
+                                onRecentAlertSelected = { dealId -> openDealById(dealId) },
+                            )
 
                             MainTab.BROWSE -> BrowseScreen(
                                 deals = uiState.deals,
                                 isLocked = !hasFullAccess,
-                                onUpgrade = { presentUpgradePaywall("feed") },
+                                onUpgrade = { presentUpgradePaywall("locked_deal") },
                                 onDealSelected = ::openDeal,
                             )
 
@@ -1233,7 +1225,7 @@ fun PriceErrorsApp(
                                         "https://play.google.com/store/account/subscriptions?package=${context.packageName}",
                                     )
                                 },
-                                onUpgrade = { presentUpgradePaywall("feed") },
+                                onUpgrade = { presentUpgradePaywall("profile") },
                                 onDealSelected = ::openDeal,
                                 onOpenAlertSettings = {
                                     selectedTabName = MainTab.ALERTS.name
@@ -1261,7 +1253,6 @@ fun PriceErrorsApp(
                                     notificationTokenStore.clearRegistration()
                                     notificationCoordinator.setEnabled(false)
                                     isPro = BuildConfig.DEBUG && preferences.isPro
-                                    hasEnteredLockedPreview = false
                                     showUpgradePaywall = false
                                     showRescueOffer = false
                                     showPostPurchaseSetup = false
@@ -1313,7 +1304,6 @@ fun PriceErrorsApp(
                                             displayName = preferences.displayName
                                             email = preferences.email
                                             isPro = false
-                                            hasEnteredLockedPreview = false
                                             savedDealIds = emptySet()
                                             claimedDealIds = emptySet()
                                             confirmedDealIds = emptySet()
@@ -1352,6 +1342,7 @@ fun PriceErrorsApp(
                                 onOpenTerms = { openWebPage(termsUrl) },
                                 onOpenAccountDeletion = { openWebPage(accountDeletionUrl) },
                                 onOpenDiscord = { openWebPage(AppLinks.DISCORD) },
+                                onOpenMaximizeDeals = { showMaximizeDeals = true },
                             )
                         }
 
@@ -1359,6 +1350,24 @@ fun PriceErrorsApp(
                             selectedTab = selectedTab,
                             onTabSelected = { tab -> selectedTabName = tab.name },
                             modifier = Modifier.align(Alignment.BottomCenter),
+                        )
+                    }
+
+                    if (showMaximizeDeals) {
+                        MaximizeDealsScreen(
+                            accent = palette.primaryColor,
+                            onDismiss = { showMaximizeDeals = false },
+                            onOpenPartner = { partner ->
+                                growthAnalytics.track(
+                                    "maximize_deals_partner_tapped",
+                                    mapOf("partner" to partner.id),
+                                )
+                                openWebPage(partner.url)
+                            },
+                            onOpened = {
+                                growthAnalytics.track("maximize_deals_opened")
+                            },
+                            modifier = Modifier.fillMaxSize(),
                         )
                     }
 

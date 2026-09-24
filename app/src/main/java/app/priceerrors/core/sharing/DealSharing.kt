@@ -14,7 +14,9 @@ import app.priceerrors.ui.components.formatPrice
  */
 object DealSharing {
     fun canShare(deal: Deal): Boolean =
-        deal.id.isNotBlank() && !deal.id.startsWith("placeholder")
+        deal.id.isNotBlank() &&
+            !deal.id.startsWith("placeholder") &&
+            !deal.id.startsWith("preview_")
 
     fun shareUrl(deal: Deal): String =
         if (canShare(deal)) {
@@ -30,7 +32,7 @@ object DealSharing {
     }
 
     fun shareMessage(deal: Deal): String =
-        "${deal.title} - ${shareDiscountText(deal)}\n${shareUrl(deal)}"
+        "Check out ${deal.title} deal:\n${shareUrl(deal)}"
 
     fun analyticsProperties(deal: Deal, source: String? = null): Map<String, String> =
         buildMap {

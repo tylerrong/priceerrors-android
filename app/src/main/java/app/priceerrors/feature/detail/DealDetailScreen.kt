@@ -293,17 +293,7 @@ fun DealDetailScreen(
                 confirmValueChange = { target -> target != SheetValue.Hidden },
             ),
             containerColor = MaterialTheme.colorScheme.background,
-            dragHandle = {
-                Box(
-                    Modifier
-                        .padding(top = 8.dp)
-                        .size(width = 42.dp, height = 5.dp)
-                        .background(
-                            MaterialTheme.colorScheme.onBackground.copy(alpha = 0.16f),
-                            CircleShape,
-                        ),
-                )
-            },
+            dragHandle = null,
         ) {
             ClaimConfirmationSheet(
                 isConfirming = isConfirmingClaim,

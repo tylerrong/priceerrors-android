@@ -42,6 +42,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -64,7 +65,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
@@ -136,56 +136,52 @@ fun FeedScreen(
             .background(MaterialTheme.colorScheme.background)
             .testTag(PriceErrorsTestTags.FEED_SCREEN),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .then(if (isLocked) Modifier.blur(13.dp) else Modifier),
-        ) {
-            when {
-                uiState.isLoading && uiState.deals.isEmpty() -> FeedLoading()
+        when {
+            uiState.isLoading && uiState.deals.isEmpty() -> FeedLoading()
 
-                uiState.deals.isEmpty() -> EmptyFeed(
-                    isError = uiState.errorMessage != null,
-                    onRetry = onRetry,
-                )
+            uiState.deals.isEmpty() -> EmptyFeed(
+                isError = uiState.errorMessage != null,
+                onRetry = onRetry,
+            )
 
-                layout == FeedLayoutOption.SWIPE -> SwipeFeed(
-                    deals = uiState.deals,
-                    totalDealCount = uiState.totalDealCount,
-                    isRefreshing = uiState.isRefreshing,
-                    errorMessage = uiState.errorMessage,
-                    onDealSelected = openDeal,
-                    onShareDeal = onShareDeal,
-                    onCopyDealLink = onCopyDealLink,
-                    onRefresh = onRetry,
-                )
+            layout == FeedLayoutOption.SWIPE -> SwipeFeed(
+                deals = uiState.deals,
+                totalDealCount = uiState.totalDealCount,
+                isRefreshing = uiState.isRefreshing,
+                errorMessage = uiState.errorMessage,
+                onDealSelected = openDeal,
+                onShareDeal = onShareDeal,
+                onCopyDealLink = onCopyDealLink,
+                onRefresh = onRetry,
+                showUnlockHint = isLocked,
+            )
 
-                layout == FeedLayoutOption.LIST -> ListFeed(
-                    deals = uiState.deals,
-                    isRefreshing = uiState.isRefreshing,
-                    errorMessage = uiState.errorMessage,
-                    onDealSelected = openDeal,
-                    onShareDeal = onShareDeal,
-                    onCopyDealLink = onCopyDealLink,
-                    onRefresh = onRetry,
-                    lastRefreshed = lastRefreshed,
-                )
+            layout == FeedLayoutOption.LIST -> ListFeed(
+                deals = uiState.deals,
+                isRefreshing = uiState.isRefreshing,
+                errorMessage = uiState.errorMessage,
+                onDealSelected = openDeal,
+                onShareDeal = onShareDeal,
+                onCopyDealLink = onCopyDealLink,
+                onRefresh = onRetry,
+                lastRefreshed = lastRefreshed,
+                showUnlockHint = isLocked,
+            )
 
-                else -> ScrollFeed(
-                    deals = uiState.deals,
-                    totalDealCount = uiState.totalDealCount,
-                    isRefreshing = uiState.isRefreshing,
-                    errorMessage = uiState.errorMessage,
-                    onDealSelected = openDeal,
-                    onShareDeal = onShareDeal,
-                    onCopyDealLink = onCopyDealLink,
-                    onRefresh = onRetry,
-                    showScrollHint = showScrollHint,
-                    onScrollHintDismissed = onScrollHintDismissed,
-                )
-            }
+            else -> ScrollFeed(
+                deals = uiState.deals,
+                totalDealCount = uiState.totalDealCount,
+                isRefreshing = uiState.isRefreshing,
+                errorMessage = uiState.errorMessage,
+                onDealSelected = openDeal,
+                onShareDeal = onShareDeal,
+                onCopyDealLink = onCopyDealLink,
+                onRefresh = onRetry,
+                showScrollHint = showScrollHint,
+                onScrollHintDismissed = onScrollHintDismissed,
+                showUnlockHint = isLocked,
+            )
         }
-
     }
 }
 
@@ -200,6 +196,7 @@ private fun SwipeFeed(
     onShareDeal: (Deal) -> Unit,
     onCopyDealLink: (Deal) -> Unit,
     onRefresh: () -> Unit,
+    showUnlockHint: Boolean = false,
 ) {
     var currentIndex by rememberSaveable { mutableIntStateOf(0) }
     val safeIndex = currentIndex.coerceIn(0, deals.lastIndex)
@@ -307,7 +304,11 @@ private fun SwipeFeed(
                         },
                     ),
             ) {
-                SwipeDealCard(deal = currentDeal, modifier = Modifier.fillMaxSize())
+                SwipeDealCard(
+                    deal = currentDeal,
+                    showUnlockHint = showUnlockHint,
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
 
             Row(
@@ -346,6 +347,7 @@ private fun ScrollFeed(
     onRefresh: () -> Unit,
     showScrollHint: Boolean,
     onScrollHintDismissed: () -> Unit,
+    showUnlockHint: Boolean = false,
 ) {
     if (deals.isEmpty()) return
 
@@ -428,7 +430,11 @@ private fun ScrollFeed(
                             .fillMaxSize()
                             .padding(horizontal = 14.dp),
                     ) {
-                        SwipeDealCard(deal = deals[page], modifier = Modifier.fillMaxSize())
+                        SwipeDealCard(
+                            deal = deals[page],
+                            showUnlockHint = showUnlockHint,
+                            modifier = Modifier.fillMaxSize(),
+                        )
                     }
                 }
 
@@ -520,75 +526,86 @@ private fun FeedHeader(
 private fun SwipeDealCard(
     deal: Deal,
     modifier: Modifier = Modifier,
+    showUnlockHint: Boolean = false,
 ) {
     val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val visuals = dealVisuals(deal.category, darkTheme)
     val outerShape = RoundedCornerShape(34.dp)
 
-    Column(
-        modifier = modifier
-            .shadow(
-                elevation = 22.dp,
-                shape = outerShape,
-                clip = false,
-                ambientColor = Color.Black.copy(alpha = 0.14f),
-                spotColor = Color.Black.copy(alpha = 0.14f),
-            )
-            .clip(outerShape)
-            .semantics(mergeDescendants = true) {
-                contentDescription = dealAccessibilityLabel(deal)
-            }
-            .testTag("${PriceErrorsTestTags.FEED_DEAL}_${deal.id}")
-            .background(visuals.background),
-    ) {
-        DealArtwork(
-            deal = deal,
-            portrait = true,
+    Box(modifier = modifier) {
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .padding(14.dp)
-                .clip(RoundedCornerShape(20.dp)),
-            contentScale = ContentScale.Fit,
-        )
-
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            shadowElevation = 6.dp,
+                .fillMaxSize()
+                .shadow(
+                    elevation = 22.dp,
+                    shape = outerShape,
+                    clip = false,
+                    ambientColor = Color.Black.copy(alpha = 0.14f),
+                    spotColor = Color.Black.copy(alpha = 0.14f),
+                )
+                .clip(outerShape)
+                .semantics(mergeDescendants = true) {
+                    contentDescription = dealAccessibilityLabel(deal)
+                }
+                .testTag("${PriceErrorsTestTags.FEED_DEAL}_${deal.id}")
+                .background(visuals.background),
         ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(9.dp),
+            DealArtwork(
+                deal = deal,
+                portrait = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(14.dp)
+                    .clip(RoundedCornerShape(20.dp)),
+                contentScale = ContentScale.Fit,
+            )
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                shadowElevation = 6.dp,
             ) {
-                Text(
-                    text = deal.title,
-                    fontFamily = SpaceGrotesk,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp,
-                    lineHeight = 24.sp,
-                    letterSpacing = (-0.6).sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                DealCardPriceGroup(
-                    deal = deal,
-                    priceSize = 28,
-                )
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    Spacer(modifier = Modifier.weight(1f))
+                Column(
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(9.dp),
+                ) {
                     Text(
-                        text = relativeDealTime(deal.postedAt),
+                        text = deal.title,
                         fontFamily = SpaceGrotesk,
-                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
-                        maxLines = 1,
+                        fontSize = 20.sp,
+                        lineHeight = 24.sp,
+                        letterSpacing = (-0.6).sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
+                    DealCardPriceGroup(
+                        deal = deal,
+                        priceSize = 28,
+                    )
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Spacer(modifier = Modifier.weight(1f))
+                        Text(
+                            text = relativeDealTime(deal.postedAt),
+                            fontFamily = SpaceGrotesk,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
+        }
+        if (showUnlockHint) {
+            UnlockHintChip(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(18.dp),
+            )
         }
     }
 }
@@ -604,6 +621,7 @@ private fun ListFeed(
     onCopyDealLink: (Deal) -> Unit,
     onRefresh: () -> Unit,
     lastRefreshed: Instant?,
+    showUnlockHint: Boolean = false,
 ) {
     var timestampNow by remember(lastRefreshed) { mutableStateOf(Instant.now()) }
     LaunchedEffect(lastRefreshed) {
@@ -659,7 +677,7 @@ private fun ListFeed(
                     onCopyLink = onCopyDealLink,
                     modifier = Modifier.padding(horizontal = 14.dp),
                 ) {
-                    ListDealRow(deal = deal)
+                    ListDealRow(deal = deal, showUnlockHint = showUnlockHint)
                 }
             }
         }
@@ -680,61 +698,71 @@ internal fun refreshedAgo(lastRefreshed: Instant?, now: Instant = Instant.now())
 private fun ListDealRow(
     deal: Deal,
     modifier: Modifier = Modifier,
+    showUnlockHint: Boolean = false,
 ) {
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .shadow(4.dp, RoundedCornerShape(22.dp))
-            .semantics(mergeDescendants = true) {
-                contentDescription = dealAccessibilityLabel(deal)
-            }
-            .testTag("${PriceErrorsTestTags.FEED_DEAL}_${deal.id}"),
-        color = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(22.dp),
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+    Box(modifier = modifier.fillMaxWidth()) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(4.dp, RoundedCornerShape(22.dp))
+                .semantics(mergeDescendants = true) {
+                    contentDescription = dealAccessibilityLabel(deal)
+                }
+                .testTag("${PriceErrorsTestTags.FEED_DEAL}_${deal.id}"),
+            color = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            shape = RoundedCornerShape(22.dp),
         ) {
-            DealArtwork(
-                deal = deal,
-                portrait = false,
-                modifier = Modifier
-                    .size(88.dp)
-                    .clip(RoundedCornerShape(18.dp)),
-                contentScale = ContentScale.Fit,
-            )
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+            Row(
+                modifier = Modifier.padding(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = deal.title,
-                    fontFamily = SpaceGrotesk,
-                    fontSize = 15.sp,
-                    lineHeight = 18.sp,
-                    letterSpacing = (-0.3).sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                DealCardPriceGroup(
+                DealArtwork(
                     deal = deal,
-                    priceSize = 19,
-                    compact = true,
+                    portrait = false,
+                    modifier = Modifier
+                        .size(88.dp)
+                        .clip(RoundedCornerShape(18.dp)),
+                    contentScale = ContentScale.Fit,
                 )
-                Text(
-                    text = relativeDealTime(deal.postedAt),
-                    fontFamily = SpaceGrotesk,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                    maxLines = 1,
-                )
+
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = deal.title,
+                        fontFamily = SpaceGrotesk,
+                        fontSize = 15.sp,
+                        lineHeight = 18.sp,
+                        letterSpacing = (-0.3).sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    DealCardPriceGroup(
+                        deal = deal,
+                        priceSize = 19,
+                        compact = true,
+                    )
+                    Text(
+                        text = relativeDealTime(deal.postedAt),
+                        fontFamily = SpaceGrotesk,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                        maxLines = 1,
+                    )
+                }
             }
+        }
+        if (showUnlockHint) {
+            UnlockHintChip(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(10.dp),
+            )
         }
     }
 }
@@ -1082,6 +1110,38 @@ private fun FeedLoading() {
                     fontWeight = FontWeight.SemiBold,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun UnlockHintChip(modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        color = Color.Black.copy(alpha = 0.55f),
+        contentColor = Color.White,
+        shape = CircleShape,
+        shadowElevation = 4.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Lock,
+                contentDescription = null,
+                modifier = Modifier.size(10.dp),
+                tint = Color.White,
+            )
+            Text(
+                text = "PRO TO OPEN",
+                fontFamily = SpaceGrotesk,
+                fontWeight = FontWeight.Black,
+                fontSize = 9.sp,
+                letterSpacing = 0.8.sp,
+                color = Color.White,
+            )
         }
     }
 }

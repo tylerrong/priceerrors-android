@@ -1,7 +1,6 @@
 package app.priceerrors.feature.profile
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -58,7 +58,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
@@ -126,6 +125,7 @@ fun ProfileScreen(
     onOpenTerms: () -> Unit = {},
     onOpenAccountDeletion: () -> Unit = {},
     onOpenDiscord: () -> Unit = {},
+    onOpenMaximizeDeals: () -> Unit = {},
     showNavigation: Boolean = true,
     monthSavings: Double = 0.0,
     lifetimeSavings: Double = 0.0,
@@ -183,6 +183,12 @@ fun ProfileScreen(
                     palette = palette,
                     onManage = onManageSubscription,
                     onUpgrade = onUpgrade,
+                )
+            }
+            item {
+                MaximizeDealsCard(
+                    accent = palette.primary,
+                    onOpen = onOpenMaximizeDeals,
                 )
             }
             item {
@@ -395,6 +401,17 @@ private fun IdentityCard(
     }
 }
 
+private object YouRowStyle {
+    val iconSize = 44.dp
+    val iconCorner = 12.dp
+    val iconTextSpacing = 14.dp
+    val padding = 15.dp
+    val cardCorner = 20.dp
+    val minHeight = 74.dp
+    val titleSize = 16.sp
+    val subtitleSize = 11.sp
+}
+
 @Composable
 private fun ProCard(
     isPro: Boolean,
@@ -405,45 +422,53 @@ private fun ProCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 4.dp)
+            .padding(horizontal = 14.dp, vertical = 4.dp)
+            .heightIn(min = YouRowStyle.minHeight)
             .clickable(onClick = if (isPro) onManage else onUpgrade),
         color = MaterialTheme.colorScheme.surface,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(YouRowStyle.cardCorner),
         border = if (isPro) null else BorderStroke(1.5.dp, palette.primary.copy(alpha = 0.50f)),
         shadowElevation = 2.dp,
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(YouRowStyle.padding),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(YouRowStyle.iconTextSpacing),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(
-                        brush = Brush.linearGradient(listOf(palette.primary, palette.secondary)),
-                        shape = RoundedCornerShape(14.dp),
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (isPro) {
-                    CrownMark(Modifier.size(24.dp))
-                } else {
+            if (isPro) {
+                Image(
+                    painter = painterResource(R.drawable.priceerrors_logo),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(YouRowStyle.iconSize)
+                        .clip(RoundedCornerShape(YouRowStyle.iconCorner)),
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(YouRowStyle.iconSize)
+                        .background(
+                            brush = Brush.linearGradient(listOf(palette.primary, palette.secondary)),
+                            shape = RoundedCornerShape(YouRowStyle.iconCorner),
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
                     Icon(
                         imageVector = Icons.Filled.Lock,
                         contentDescription = null,
-                        modifier = Modifier.size(24.dp),
+                        modifier = Modifier.size(22.dp),
                         tint = Color.White,
                     )
                 }
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = if (isPro) "PriceErrors Pro" else "Go Pro",
+                    text = if (isPro) "priceerrors Pro" else "Go Pro",
                     fontFamily = SpaceGrotesk,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
+                    fontSize = YouRowStyle.titleSize,
                     letterSpacing = (-0.3).sp,
                 )
                 Text(
@@ -452,7 +477,9 @@ private fun ProCard(
                     } else {
                         "Unlock every deal and personalized alert"
                     },
-                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = SpaceGrotesk,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = YouRowStyle.subtitleSize,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
                 )
             }
@@ -481,25 +508,59 @@ private fun ProCard(
 }
 
 @Composable
-private fun CrownMark(modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier) {
-        val crown = Path().apply {
-            moveTo(size.width * 0.08f, size.height * 0.27f)
-            lineTo(size.width * 0.30f, size.height * 0.52f)
-            lineTo(size.width * 0.50f, size.height * 0.18f)
-            lineTo(size.width * 0.70f, size.height * 0.52f)
-            lineTo(size.width * 0.92f, size.height * 0.27f)
-            lineTo(size.width * 0.80f, size.height * 0.72f)
-            lineTo(size.width * 0.20f, size.height * 0.72f)
-            close()
+private fun MaximizeDealsCard(
+    accent: Color,
+    onOpen: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 4.dp)
+            .heightIn(min = YouRowStyle.minHeight)
+            .clickable(role = Role.Button, onClick = onOpen),
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(YouRowStyle.cardCorner),
+        shadowElevation = 1.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(YouRowStyle.padding),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(YouRowStyle.iconTextSpacing),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(YouRowStyle.iconSize)
+                    .background(accent.copy(alpha = 0.12f), RoundedCornerShape(YouRowStyle.iconCorner)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.LocalOffer,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Maximize deals",
+                    fontFamily = SpaceGrotesk,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = YouRowStyle.titleSize,
+                )
+                Text(
+                    text = "Stack cashback with Rakuten, Capital One Shopping, and Checkmate.",
+                    fontFamily = SpaceGrotesk,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = YouRowStyle.subtitleSize,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                )
+            }
+            Icon(
+                imageVector = Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.48f),
+            )
         }
-        drawPath(crown, Color.White)
-        drawRoundRect(
-            color = Color.White,
-            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.20f, size.height * 0.77f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.60f, size.height * 0.12f),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height * 0.05f),
-        )
     }
 }
 
@@ -631,31 +692,32 @@ private fun DiscordJoinCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 8.dp)
+            .padding(horizontal = 14.dp, vertical = 4.dp)
+            .heightIn(min = YouRowStyle.minHeight)
             .clickable(
                 role = Role.Button,
                 onClick = onOpenDiscord,
             ),
         color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(YouRowStyle.cardCorner),
         shadowElevation = 1.dp,
     ) {
         Row(
-            modifier = Modifier.padding(15.dp),
+            modifier = Modifier.padding(YouRowStyle.padding),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(YouRowStyle.iconTextSpacing),
         ) {
             Box(
                 modifier = Modifier
-                    .size(42.dp)
-                    .background(accent.copy(alpha = 0.12f), RoundedCornerShape(12.dp)),
+                    .size(YouRowStyle.iconSize)
+                    .background(accent.copy(alpha = 0.12f), RoundedCornerShape(YouRowStyle.iconCorner)),
                 contentAlignment = Alignment.Center,
             ) {
                 Image(
                     painter = painterResource(R.drawable.discord_symbol_blurple),
                     contentDescription = null,
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier.size(28.dp),
+                    modifier = Modifier.size(YouRowStyle.iconSize * 0.78f),
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
@@ -663,11 +725,13 @@ private fun DiscordJoinCard(
                     text = "Join our Discord",
                     fontFamily = SpaceGrotesk,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
+                    fontSize = YouRowStyle.titleSize,
                 )
                 Text(
                     text = "Get updates and talk deals with other members.",
-                    style = MaterialTheme.typography.labelMedium,
+                    fontFamily = SpaceGrotesk,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = YouRowStyle.subtitleSize,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                 )
             }

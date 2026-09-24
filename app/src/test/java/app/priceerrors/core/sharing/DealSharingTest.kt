@@ -12,8 +12,8 @@ class DealSharingTest {
     fun `share message matches iOS format`() {
         val deal = sampleDeal()
         assertEquals("https://www.priceerrors.app/deal/42", DealSharing.shareUrl(deal))
-        assertTrue(DealSharing.shareMessage(deal).startsWith("AirPods - 60% off\n"))
-        assertTrue(DealSharing.shareMessage(deal).contains("https://www.priceerrors.app/deal/42"))
+        assertEquals("Check out AirPods deal:\nhttps://www.priceerrors.app/deal/42", DealSharing.shareMessage(deal))
+        assertFalse(DealSharing.shareMessage(deal).contains("60% off"))
         assertFalse(DealSharing.shareMessage(deal).contains("Check it out on priceerrors"))
         assertFalse(DealSharing.shareMessage(deal).contains("PriceErrors"))
         assertFalse(DealSharing.shareMessage(deal).contains("—"))
@@ -25,12 +25,20 @@ class DealSharingTest {
         assertEquals("FREE", DealSharing.shareDiscountText(deal))
     }
 
+    @Test
+    fun `preview and placeholder ids cannot be shared`() {
+        assertFalse(DealSharing.canShare(sampleDeal(id = "preview_abc")))
+        assertFalse(DealSharing.canShare(sampleDeal(id = "placeholder-1")))
+        assertTrue(DealSharing.canShare(sampleDeal(id = "42")))
+    }
+
     private fun sampleDeal(
+        id: String = "42",
         priceInCents: Long = 7900,
         originalPriceInCents: Long = 19900,
         discount: Int = 60,
     ): Deal = Deal(
-        id = "42",
+        id = id,
         sourceId = "src-42",
         brand = "Target",
         title = "AirPods",
@@ -50,6 +58,6 @@ class DealSharingTest {
         dealUrl = null,
     ).also {
         // discountPercent is derived; keep sample inputs consistent with expected %.
-        require(it.discountPercent == discount || priceInCents == 0L)
+        require(it.discountPercent == discount || priceInCents == 0L || id.startsWith("preview_") || id.startsWith("placeholder"))
     }
 }
